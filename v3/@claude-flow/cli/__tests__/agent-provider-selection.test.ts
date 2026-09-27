@@ -13,7 +13,7 @@ describe('explicit execution provider boundaries', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'ruflo-provider-selection-'));
-    for (const key of ['ANTHROPIC_API_KEY', 'OPENROUTER_API_KEY', 'OLLAMA_API_KEY', 'RUFLO_PROVIDER', 'OLLAMA_BASE_URL', 'OPENROUTER_BASE_URL']) vi.stubEnv(key, '');
+    for (const key of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL', 'OPENROUTER_API_KEY', 'OLLAMA_API_KEY', 'RUFLO_PROVIDER', 'OLLAMA_BASE_URL', 'OPENROUTER_BASE_URL']) vi.stubEnv(key, '');
     vi.stubEnv('CLAUDE_FLOW_CWD', dir);
     fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({
       id: 'response', model: 'test-model', content: [{type: 'text', text: 'done'}],
