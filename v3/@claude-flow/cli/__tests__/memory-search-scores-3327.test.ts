@@ -25,7 +25,11 @@ interface SearchResponse {
   smartFallback?: string;
   stats?: { variantCount: number; rawCandidateCount: number };
 }
+let memoryModuleFactory: () => object | Promise<object>;
 async function search(input: Record<string, unknown>): Promise<SearchResponse> {
+  // Register once per search: two queued doMock calls for this resolved ID
+  // can finish out of order while Vite resolves their module IDs.
+  vi.doMock('/@id/@claude-flow/memory', memoryModuleFactory);
   const { memoryTools } = await import('../src/mcp-tools/memory-tools.js');
   return memoryTools.find(t => t.name === 'memory_search')!.handler(input) as Promise<SearchResponse>;
 }
@@ -37,7 +41,7 @@ beforeEach(() => {
   // are faked; this exercises the real MCP handler and its response whitelist.
   // The CLI's externalize-optional-deps plugin rewrites this dynamic import
   // to /@id/...; mock that resolved ID so Vitest 4 intercepts the import.
-  vi.doMock('/@id/@claude-flow/memory', async () => import('../../memory/src/smart-retrieval.js'));
+  memoryModuleFactory = async () => import('../../memory/src/smart-retrieval.js');
 });
 afterEach(() => vi.restoreAllMocks());
 
@@ -108,10 +112,10 @@ describe('memory_search score contract (#3327 Finding B)', () => {
   });
 
   it.each(['missing export', 'import failure'])('preserves standard fallback on %s', async (reason) => {
-    vi.doMock('/@id/@claude-flow/memory', () => {
+    memoryModuleFactory = () => {
       if (reason === 'import failure') throw new Error('unavailable package');
       return { smartSearch: undefined };
-    });
+    };
     searchEntries.mockResolvedValue({ success: true, results: [entry('a', 0.49)] });
     const result = await search({ query: 'alpha', smart: true });
     expect(result.results).toEqual([{
@@ -123,14 +127,14 @@ describe('memory_search score contract (#3327 Finding B)', () => {
   });
 
   it('supplies rawScore to older SmartRetrieval implementations that preserve candidate fields', async () => {
-    vi.doMock('/@id/@claude-flow/memory', () => ({
+    memoryModuleFactory = () => ({
       // The existing return projection is {...candidate, score}. This fake
       // deliberately does not create rawScore: the MCP adapter must supply it.
       smartSearch: async (rawSearch: (request: RawSearchRequest) => Promise<{ results: object[] }>) => {
         const raw = await rawSearch({ query: 'alpha' });
         return { results: raw.results.map(r => ({ ...r, score: 0.05 })), stats: {} };
       },
-    }));
+    });
     searchEntries.mockResolvedValue({ success: true, results: [entry('a', 0)] });
     const result = await search({ query: 'alpha', smart: true, threshold: 0 });
     expect(result.results[0].similarity).toBe(0);
