@@ -27,25 +27,27 @@ describe('provider request lifetime', () => {
   it.each(providers)('keeps the %s deadline active after headers and cancels a stalled body', async provider => {
     vi.stubEnv(`${provider.toUpperCase()}_API_KEY`, 'test-credential');
     let cancelled = false;
+    let headersSent = false;
     server = createServer((_req, res) => {
       res.on('close', () => { cancelled = !res.writableEnded; });
-      res.writeHead(200, {'content-type':'application/json'}); res.flushHeaders();
+      res.writeHead(200, {'content-type':'application/json'}); res.flushHeaders(); headersSent = true;
       // Bounded even on the broken implementation: no hanging test/server.
       releaseBody = setTimeout(() => res.end(JSON.stringify({
         id:'late', model:'test-model', content:[{type:'text',text:'late result'}],
         choices:[{message:{content:'late result'},finish_reason:'stop'}],
         usage:{input_tokens:1,output_tokens:1}, stop_reason:'end_turn',
-      })), 400);
+      })), 2000);
     });
     await new Promise<void>(resolve => server!.listen(0, '127.0.0.1', resolve));
     const base = `http://127.0.0.1:${(server.address() as {port:number}).port}`;
     const localFetch = globalThis.fetch;
     // Exercise real HTTP body cancellation, while preventing provider API spend.
     vi.stubGlobal('fetch', (url: string, init: RequestInit) => localFetch(base + new URL(url).pathname, init));
-    const result = await callAnthropicMessages({prompt:'test', provider, timeoutMs:80});
+    const result = await callAnthropicMessages({prompt:'test', provider, timeoutMs:500});
+    expect(headersSent).toBe(true);
     expect(result.success).toBe(false);
     expect(result.error).toMatch(/abort|timeout/i);
-    await vi.waitFor(() => expect(cancelled).toBe(true), {timeout:150});
+    await vi.waitFor(() => expect(cancelled).toBe(true), {timeout:1000});
   });
 
   it.each(providers)('clears the %s timer when fetch rejects', async provider => {
