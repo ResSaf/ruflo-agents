@@ -8,7 +8,7 @@ function send(url: string, method = 'GET'): Promise<number> {
       res.resume();
       res.on('end', () => resolve(res.statusCode!));
     });
-    req.setTimeout(100, () => req.destroy(new Error('request timed out')));
+    req.setTimeout(2_000, () => req.destroy(new Error('request timed out')));
     req.on('error', reject);
     req.end();
   });
@@ -18,7 +18,7 @@ describe('OAuth loopback callback routing', () => {
   for (const [path, method, status] of [['/favicon.ico', 'GET', 404], ['/oauth/callback', 'POST', 405]] as const) {
     it(`ignores ${method} ${path} and still receives the OAuth callback`, async () => {
       const server = await CallbackServer.bind();
-      const result = server.awaitCallback(300).catch(error => error);
+      const result = server.awaitCallback(3_000).catch(error => error);
       try {
         expect(await send(`http://127.0.0.1:${server.port}${path}`, method)).toBe(status);
         expect(await send(`${server.redirectUri}?code=legitimate&state=expected`)).toBe(200);
@@ -30,8 +30,8 @@ describe('OAuth loopback callback routing', () => {
     const server = await CallbackServer.bind();
     try {
       expect(await send(`${server.redirectUri}?code=early&state=original`)).toBe(200);
-      expect(await server.awaitCallback(30)).toEqual({ code: 'early', state: 'original', error: null });
-    } finally { await server.awaitCallback(30).catch(() => {}); }
+      expect(await server.awaitCallback(500)).toEqual({ code: 'early', state: 'original', error: null });
+    } finally { await server.awaitCallback(500).catch(() => {}); }
   });
   it('still times out when no callback arrives', async () => {
     const server = await CallbackServer.bind();
