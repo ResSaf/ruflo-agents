@@ -28,7 +28,7 @@ function validateImportedSession(value: unknown): string | undefined {
   if (value.name !== undefined && typeof value.name !== 'string') {
     return 'Invalid session: name must be a string';
   }
-  if (value.data === undefined) return;
+  if (value.data === undefined) return undefined;
   if (!isRecord(value.data)) return 'Invalid session: data must be an object';
   for (const [component, collection] of [['tasks', 'tasks'], ['agents', 'agents'], ['memory', 'entries']]) {
     const store = value.data[component];
@@ -38,6 +38,7 @@ function validateImportedSession(value: unknown): string | undefined {
       return `Invalid session: data.${component}.${collection} must be a record map`;
     }
   }
+  return undefined;
 }
 
 // Storage paths
