@@ -17,6 +17,7 @@ import { EventEmitter } from 'events';
 import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
+import { readClaimsStore } from './claims-store.js';
 
 // ============================================================================
 // Types
@@ -233,26 +234,24 @@ export class ClaimService extends EventEmitter {
   }
 
   private async loadClaims(): Promise<void> {
-    const claimsFile = path.join(this.storagePath, 'claims.json');
-    if (fs.existsSync(claimsFile)) {
-      try {
-        const data = JSON.parse(fs.readFileSync(claimsFile, 'utf-8'));
-        for (const claim of data.claims || []) {
-          claim.claimedAt = new Date(claim.claimedAt);
-          claim.statusChangedAt = new Date(claim.statusChangedAt);
-          if (claim.expiresAt) claim.expiresAt = new Date(claim.expiresAt);
-          this.claims.set(claim.issueId, claim);
-        }
-      } catch {
-        // Start fresh if file is corrupted
-      }
+    const data = readClaimsStore(path.join(this.storagePath, 'claims.json'));
+    for (const claim of Object.values(data.claims as Record<string, IssueClaim>)) {
+      claim.claimedAt = new Date(claim.claimedAt);
+      claim.statusChangedAt = new Date(claim.statusChangedAt);
+      if (claim.expiresAt) claim.expiresAt = new Date(claim.expiresAt);
+      this.claims.set(claim.issueId, claim);
+    }
+    for (const [id, info] of Object.entries(data.stealable as Record<string, StealableInfo>)) {
+      this.stealableInfo.set(id, { ...info, stealableAt: new Date(info.stealableAt) });
     }
   }
 
   private async saveClaims(): Promise<void> {
     const claimsFile = path.join(this.storagePath, 'claims.json');
     const data = {
-      claims: Array.from(this.claims.values()),
+      ...readClaimsStore(claimsFile),
+      claims: Object.fromEntries(this.claims),
+      stealable: Object.fromEntries(this.stealableInfo),
       savedAt: new Date().toISOString(),
     };
     fs.writeFileSync(claimsFile, JSON.stringify(data, null, 2));
