@@ -233,17 +233,21 @@ export class ClaimService extends EventEmitter {
     await this.loadClaims();
   }
 
-  private async loadClaims(): Promise<void> {
+  private loadClaims(): void {
     const data = readClaimsStore(path.join(this.storagePath, 'claims.json'));
+    const claims = new Map<string, IssueClaim>();
+    const stealable = new Map<string, StealableInfo>();
     for (const claim of Object.values(data.claims as Record<string, IssueClaim>)) {
       claim.claimedAt = new Date(claim.claimedAt);
       claim.statusChangedAt = new Date(claim.statusChangedAt);
       if (claim.expiresAt) claim.expiresAt = new Date(claim.expiresAt);
-      this.claims.set(claim.issueId, claim);
+      claims.set(claim.issueId, claim);
     }
     for (const [id, info] of Object.entries(data.stealable as Record<string, StealableInfo>)) {
-      this.stealableInfo.set(id, { ...info, stealableAt: new Date(info.stealableAt) });
+      stealable.set(id, { ...info, stealableAt: new Date(info.stealableAt) });
     }
+    this.claims = claims;
+    this.stealableInfo = stealable;
   }
 
   private async saveClaims(): Promise<void> {
@@ -262,6 +266,7 @@ export class ClaimService extends EventEmitter {
   // ==========================================================================
 
   async claim(issueId: string, claimant: Claimant): Promise<ClaimResult> {
+    this.loadClaims();
     // Check if already claimed
     const existing = this.claims.get(issueId);
     if (existing && existing.status !== 'stealable') {
@@ -296,6 +301,7 @@ export class ClaimService extends EventEmitter {
   }
 
   async release(issueId: string, claimant: Claimant): Promise<void> {
+    this.loadClaims();
     const claim = this.claims.get(issueId);
     if (!claim) {
       throw new Error(`Issue ${issueId} is not claimed`);
@@ -327,6 +333,7 @@ export class ClaimService extends EventEmitter {
     to: Claimant,
     reason: string
   ): Promise<void> {
+    this.loadClaims();
     const claim = this.claims.get(issueId);
     if (!claim) {
       throw new Error(`Issue ${issueId} is not claimed`);
@@ -352,6 +359,7 @@ export class ClaimService extends EventEmitter {
   }
 
   async acceptHandoff(issueId: string, claimant: Claimant): Promise<void> {
+    this.loadClaims();
     const claim = this.claims.get(issueId);
     if (!claim || claim.status !== 'handoff-pending') {
       throw new Error(`No pending handoff for issue ${issueId}`);
@@ -379,6 +387,7 @@ export class ClaimService extends EventEmitter {
   }
 
   async rejectHandoff(issueId: string, claimant: Claimant, reason: string): Promise<void> {
+    this.loadClaims();
     const claim = this.claims.get(issueId);
     if (!claim || claim.status !== 'handoff-pending') {
       throw new Error(`No pending handoff for issue ${issueId}`);
@@ -408,6 +417,7 @@ export class ClaimService extends EventEmitter {
   // ==========================================================================
 
   async updateStatus(issueId: string, status: ClaimStatus, note?: string): Promise<void> {
+    this.loadClaims();
     const claim = this.claims.get(issueId);
     if (!claim) {
       throw new Error(`Issue ${issueId} is not claimed`);
@@ -435,6 +445,7 @@ export class ClaimService extends EventEmitter {
   }
 
   async updateProgress(issueId: string, progress: number): Promise<void> {
+    this.loadClaims();
     const claim = this.claims.get(issueId);
     if (!claim) {
       throw new Error(`Issue ${issueId} is not claimed`);
@@ -445,6 +456,7 @@ export class ClaimService extends EventEmitter {
   }
 
   async requestReview(issueId: string, reviewers: Claimant[]): Promise<void> {
+    this.loadClaims();
     const claim = this.claims.get(issueId);
     if (!claim) {
       throw new Error(`Issue ${issueId} is not claimed`);
@@ -468,6 +480,7 @@ export class ClaimService extends EventEmitter {
   // ==========================================================================
 
   async markStealable(issueId: string, info: StealableInfo): Promise<void> {
+    this.loadClaims();
     const claim = this.claims.get(issueId);
     if (!claim) {
       throw new Error(`Issue ${issueId} is not claimed`);
@@ -490,6 +503,7 @@ export class ClaimService extends EventEmitter {
   }
 
   async steal(issueId: string, stealer: Claimant): Promise<StealResult> {
+    this.loadClaims();
     const claim = this.claims.get(issueId);
     if (!claim) {
       return { success: false, error: `Issue ${issueId} is not claimed` };
@@ -535,6 +549,7 @@ export class ClaimService extends EventEmitter {
   }
 
   async getStealable(agentType?: string): Promise<IssueClaim[]> {
+    this.loadClaims();
     const stealable: IssueClaim[] = [];
 
     for (const claim of this.claims.values()) {
@@ -552,6 +567,7 @@ export class ClaimService extends EventEmitter {
   }
 
   async contestSteal(issueId: string, originalClaimant: Claimant, reason: string): Promise<void> {
+    this.loadClaims();
     const claim = this.claims.get(issueId);
     if (!claim) {
       throw new Error(`Issue ${issueId} is not claimed`);
@@ -573,6 +589,7 @@ export class ClaimService extends EventEmitter {
   // ==========================================================================
 
   async getAgentLoad(agentId: string): Promise<AgentLoadInfo> {
+    this.loadClaims();
     const claims: IssueClaim[] = [];
     let blockedCount = 0;
 
@@ -598,6 +615,7 @@ export class ClaimService extends EventEmitter {
   }
 
   async rebalance(swarmId: string): Promise<RebalanceResult> {
+    this.loadClaims();
     const result: RebalanceResult = { moved: [], suggested: [] };
 
     // Get all agent loads
@@ -655,6 +673,7 @@ export class ClaimService extends EventEmitter {
   // ==========================================================================
 
   async getClaimedBy(claimant: Claimant): Promise<IssueClaim[]> {
+    this.loadClaims();
     return Array.from(this.claims.values()).filter(c =>
       this.isSameClaimant(c.claimant, claimant)
     );
@@ -667,14 +686,17 @@ export class ClaimService extends EventEmitter {
   }
 
   async getIssueStatus(issueId: string): Promise<IssueClaim | null> {
+    this.loadClaims();
     return this.claims.get(issueId) || null;
   }
 
   async getAllClaims(): Promise<IssueClaim[]> {
+    this.loadClaims();
     return Array.from(this.claims.values());
   }
 
   async getByStatus(status: ClaimStatus): Promise<IssueClaim[]> {
+    this.loadClaims();
     return Array.from(this.claims.values()).filter(c => c.status === status);
   }
 
@@ -683,6 +705,7 @@ export class ClaimService extends EventEmitter {
   // ==========================================================================
 
   async expireStale(maxAgeMinutes?: number): Promise<IssueClaim[]> {
+    this.loadClaims();
     const threshold = maxAgeMinutes ?? this.config.staleThresholdMinutes;
     const now = Date.now();
     const expired: IssueClaim[] = [];
@@ -699,7 +722,7 @@ export class ClaimService extends EventEmitter {
           progress: claim.progress,
           context: `Stale: No activity for ${Math.round(age)} minutes`,
         });
-        expired.push(claim);
+        expired.push(this.claims.get(claim.issueId)!);
       }
     }
 
