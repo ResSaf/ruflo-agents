@@ -602,6 +602,7 @@ export async function executeAgentTask(input: AgentExecuteInput): Promise<AgentE
     `Respond directly and stay focused on the task. If you need information you don't have, state that explicitly.`;
 
   const initialModelId = agent.modelId;
+  const initialModel = agent.model;
   agent.status = 'busy';
   agent.taskCount = (agent.taskCount || 0) + 1;
   saveAgentStore(store);
@@ -770,7 +771,12 @@ export async function executeAgentTask(input: AgentExecuteInput): Promise<AgentE
     const current = latest.agents[input.agentId];
     if (!current || current.createdAt !== agent.createdAt) return;
     if (current.status === 'busy') current.status = remaining > 0 ? 'busy' : 'idle';
-    if (agent.modelId !== initialModelId && current.modelId === initialModelId) current.modelId = agent.modelId;
+    if (agent.modelId !== initialModelId && current.modelId === initialModelId) {
+      // A fallback may also change its tier. Carry that change with the model
+      // ID, but preserve any selection the user edited during the request.
+      if (agent.model !== initialModel && current.model === initialModel) current.model = agent.model;
+      current.modelId = agent.modelId;
+    }
     if (out) current.lastResult = out as unknown as Record<string, unknown>;
     saveAgentStore(latest);
   };
