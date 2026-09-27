@@ -251,16 +251,17 @@ export async function getValidAccessToken(profileName = 'default'): Promise<stri
 
   const cached = getSessionToken(profileName, ACCESS_TOKEN_REFRESH_WINDOW_MS);
   if (cached) return cached;
-  if (!profile.keychainRef) throw new SessionOnlyExpiredError(profileName);
+  const keychainRef = profile.keychainRef;
+  if (!keychainRef) throw new SessionOnlyExpiredError(profileName);
 
-  const refreshKey = JSON.stringify([profileName, profile.keychainRef]);
+  const refreshKey = JSON.stringify([profileName, keychainRef]);
   const pending = pendingRefreshes.get(refreshKey);
   if (pending) return pending;
 
   const refresh = (async () => {
     const sec = await loadSecurityOAuth();
     const keychain = await sec.createKeychainAdapter();
-    const refreshTokenValue = await keychain.getSecret(KEYCHAIN_SERVICE, profile.keychainRef);
+    const refreshTokenValue = await keychain.getSecret(KEYCHAIN_SERVICE, keychainRef);
     if (!refreshTokenValue) throw new SessionOnlyExpiredError(profileName);
 
     const refreshed = await refreshAccessToken(refreshTokenValue);
@@ -270,7 +271,7 @@ export async function getValidAccessToken(profileName = 'default'): Promise<stri
     // credential first; if this write fails, do not publish/cache the access
     // token and do not retry the already-spent old refresh token here.
     if (refreshed.refresh_token) {
-      await keychain.setSecret(KEYCHAIN_SERVICE, profile.keychainRef, refreshed.refresh_token);
+      await keychain.setSecret(KEYCHAIN_SERVICE, keychainRef, refreshed.refresh_token);
     }
 
     const expiresAtMs = Date.now() + Math.max(0, refreshed.expires_in ?? 0) * 1000;
