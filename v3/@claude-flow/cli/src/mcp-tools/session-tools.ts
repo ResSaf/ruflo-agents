@@ -15,6 +15,31 @@ import {
 } from '../fs-secure.js';
 import { validateIdentifier, validateText } from './validate-input.js';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+// Imported snapshots become live stores on restore. Validate their containers
+// before registering them, while allowing older metadata-only snapshots.
+function validateImportedSession(value: unknown): string | undefined {
+  if (!isRecord(value) || (typeof value.name !== 'string' && !isRecord(value.data))) {
+    return 'Invalid session: expected a named snapshot or snapshot data';
+  }
+  if (value.name !== undefined && typeof value.name !== 'string') {
+    return 'Invalid session: name must be a string';
+  }
+  if (value.data === undefined) return;
+  if (!isRecord(value.data)) return 'Invalid session: data must be an object';
+  for (const [component, collection] of [['tasks', 'tasks'], ['agents', 'agents'], ['memory', 'entries']]) {
+    const store = value.data[component];
+    if (store === undefined) continue;
+    if (!isRecord(store) || !isRecord(store[collection]) ||
+        Object.values(store[collection]).some(record => !isRecord(record))) {
+      return `Invalid session: data.${component}.${collection} must be a record map`;
+    }
+  }
+}
+
 // Storage paths
 const STORAGE_DIR = '.claude-flow';
 const SESSION_DIR = 'sessions';
@@ -549,8 +574,15 @@ export const sessionTools: MCPTool[] = [
       let parsed: SessionRecord;
       try { parsed = JSON.parse(readFileSync(inputPath, 'utf-8')); }
       catch (e) { return { error: `Invalid session JSON: ${(e as Error).message}` }; }
+      const validationError = validateImportedSession(parsed);
+      if (validationError) return { error: validationError };
       const newId = `session-${Date.now()}-${randomUUID().slice(0, 8)}`;
-      const stats = parsed.stats || { tasks: 0, agents: 0, memoryEntries: 0, totalSize: 0 };
+      const stats = {
+        tasks: Object.keys((parsed.data?.tasks?.tasks as object) || {}).length,
+        agents: Object.keys((parsed.data?.agents?.agents as object) || {}).length,
+        memoryEntries: Object.keys((parsed.data?.memory?.entries as object) || {}).length,
+        totalSize: 0,
+      };
       const session: SessionRecord = {
         sessionId: newId,
         name: input.name ? String(input.name) : (parsed.name || 'imported-session'),
@@ -559,6 +591,7 @@ export const sessionTools: MCPTool[] = [
         stats,
         data: parsed.data,
       };
+      session.stats.totalSize = Buffer.byteLength(JSON.stringify(session), 'utf-8');
       saveSession(session);
       let activated = false;
       if (input.activate === true) {
