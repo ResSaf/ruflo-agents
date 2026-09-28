@@ -29,22 +29,23 @@ const cliBase = pkgDir
   ? join(pkgDir, 'node_modules', '@claude-flow', 'cli')
   : resolve(__dirname, '../../v3/@claude-flow/cli');
 
-// The wrapper and implementation ship in lockstep. A broad dependency range
-// previously let a current wrapper silently run an older cached CLI (#3306).
-// Check package metadata before either the fast --version path or an MCP
-// import, without loading the CLI or its expensive model dependencies.
-let wrapperVersion;
-let cliVersion;
+// The exact dependency pin prevents mismatches in normal installs. Existing
+// partial upgrades can still resolve a different CLI (#3306); make that
+// visible on stderr without taking an otherwise working command offline.
+let wrapperVersion = '0.0.0';
+let cliVersion = 'unknown';
+let versionProblem;
 try {
   wrapperVersion = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf-8')).version;
   cliVersion = JSON.parse(readFileSync(join(cliBase, 'package.json'), 'utf-8')).version;
 } catch (error) {
-  console.error(`ruflo: cannot verify installed CLI version: ${error.message}`);
-  process.exit(1);
+  versionProblem = `cannot verify installed CLI version: ${error.message}`;
 }
-if (!wrapperVersion || wrapperVersion !== cliVersion) {
-  console.error(`ruflo: wrapper v${wrapperVersion || 'unknown'} requires @claude-flow/cli v${wrapperVersion || 'unknown'}, but resolved v${cliVersion || 'unknown'} at ${cliBase}`);
-  process.exit(1);
+if (!versionProblem && wrapperVersion !== cliVersion) {
+  versionProblem = `wrapper v${wrapperVersion} expects @claude-flow/cli v${wrapperVersion}, but resolved v${cliVersion} at ${cliBase}`;
+}
+if (versionProblem) {
+  console.error(`ruflo: warning: ${versionProblem}; continuing. Reinstall ruflo to restore matching versions.`);
 }
 
 // #2256: --version / -V must not trigger heavy CLI/model imports.
