@@ -4,14 +4,18 @@ import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync,
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import test from 'node:test';
+import { afterEach, test } from 'vitest';
 
 const wrapperSource = fileURLToPath(new URL('../bin/ruflo.js', import.meta.url));
 const wrapperVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+const fixtureRoots = [];
+afterEach(() => {
+  for (const root of fixtureRoots.splice(0)) rmSync(root, { recursive: true, force: true });
+});
 
-function install(t, cliVersion) {
+function install(cliVersion) {
   const root = mkdtempSync(join(tmpdir(), 'ruflo-wrapper-3306-'));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  fixtureRoots.push(root);
   const wrapperDir = join(root, 'node_modules', 'ruflo');
   const cliDir = join(root, 'node_modules', '@claude-flow', 'cli');
   mkdirSync(join(wrapperDir, 'bin'), { recursive: true });
@@ -30,8 +34,8 @@ function run(fixture, args) {
   });
 }
 
-test('matching wrapper and runtime report the version without importing the CLI', (t) => {
-  const fixture = install(t, wrapperVersion);
+test('matching wrapper and runtime report the version without importing the CLI', () => {
+  const fixture = install(wrapperVersion);
   const result = run(fixture, ['--version']);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, `ruflo v${wrapperVersion}\n`);
@@ -39,8 +43,8 @@ test('matching wrapper and runtime report the version without importing the CLI'
   assert.equal(existsSync(fixture.marker), false);
 });
 
-test('a stale runtime is disclosed without breaking the version command', (t) => {
-  const fixture = install(t, '3.33.0');
+test('a stale runtime is disclosed without breaking the version command', () => {
+  const fixture = install('3.33.0');
   const result = run(fixture, ['--version']);
   assert.equal(result.status, 0);
   assert.equal(result.stdout, `ruflo v${wrapperVersion}\n`);
@@ -48,8 +52,8 @@ test('a stale runtime is disclosed without breaking the version command', (t) =>
   assert.equal(existsSync(fixture.marker), false);
 });
 
-test('a stale runtime is disclosed on stderr and MCP still launches', (t) => {
-  const fixture = install(t, '3.33.0');
+test('a stale runtime is disclosed on stderr and MCP still launches', () => {
+  const fixture = install('3.33.0');
   const result = run(fixture, ['mcp', 'start']);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stdout, '');
@@ -57,8 +61,8 @@ test('a stale runtime is disclosed on stderr and MCP still launches', (t) => {
   assert.equal(existsSync(fixture.marker), true);
 });
 
-test('missing CLI metadata warns without taking the version command offline', (t) => {
-  const fixture = install(t, wrapperVersion);
+test('missing CLI metadata warns without taking the version command offline', () => {
+  const fixture = install(wrapperVersion);
   rmSync(join(fixture.cliDir, 'package.json'));
   const result = run(fixture, ['--version']);
   assert.equal(result.status, 0);
@@ -67,8 +71,8 @@ test('missing CLI metadata warns without taking the version command offline', (t
   assert.equal(existsSync(fixture.marker), false);
 });
 
-test('a matching runtime still receives MCP commands', (t) => {
-  const fixture = install(t, wrapperVersion);
+test('a matching runtime still receives MCP commands', () => {
+  const fixture = install(wrapperVersion);
   const result = run(fixture, ['mcp', 'start']);
   assert.equal(result.status, 0, result.stderr);
   assert.equal(result.stderr, '');
