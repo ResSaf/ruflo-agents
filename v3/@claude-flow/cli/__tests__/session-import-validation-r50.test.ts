@@ -26,3 +26,10 @@ it.each([undefined, {tasks:999,agents:999,memoryEntries:999,totalSize:999}])('de
 it('accepts older metadata-only snapshots and recomputes empty counts', async () => {
   expect(await importData({name:'metadata',sessionId:'old'})).toMatchObject({name:'metadata',stats:{tasksImported:0,agentsImported:0,memoryEntriesImported:0}});
 });
+
+it.each([{name:'bad',data:{tasks:{tasks:[]}}}, {name:'bad',data:{memory:{entries:{a:null}}}}])('rejects malformed inline snapshot %j before registration', async data => {
+  const result = await call('session_import', {data});
+  expect(result.error).toMatch(/invalid session/i);
+  const dir = join(state.cwd, '.claude-flow/sessions');
+  expect(existsSync(dir) ? readdirSync(dir) : []).toEqual([]);
+});

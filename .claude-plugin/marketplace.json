@@ -12,6 +12,21 @@
       "description": "Core Ruflo MCP tools, commands, and Claude Code orchestration patterns"
     },
     {
+      "name": "ruflo-ai-team",
+      "source": "./plugins/ruflo-ai-team/directory",
+      "description": "Tenant-isolated AI teams that plan work, coordinate tasks, recall approved context, and return evidence-backed results"
+    },
+    {
+      "name": "ruflo-x-gateway",
+      "source": "./plugins/ruflo-x-gateway/directory",
+      "description": "Remote RuFlo Federation MCP connector for signed channels, work claims, evidence, and cross-agent coordination"
+    },
+    {
+      "name": "ruflo-deepseek-harness",
+      "source": "./plugins/ruflo-deepseek-harness",
+      "description": "DeepSeek model harness with focused agents, commands, and skills for swarm-backed reasoning workflows"
+    },
+    {
       "name": "ruflo-swarm",
       "source": "./plugins/ruflo-swarm",
       "description": "Agent teams, swarm coordination, Monitor streams, and worktree isolation"
