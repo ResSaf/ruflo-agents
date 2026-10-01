@@ -302,10 +302,13 @@ if (isMCPMode) {
 
         try {
           const result = await callMCPTool(toolName, toolParams, { sessionId });
+          // Failed task outcomes are data; an explicit handler error is a tool failure.
+          const isError = result !== null && typeof result === 'object'
+            && typeof result.error === 'string' && result.error.trim().length > 0;
           return {
             jsonrpc: '2.0',
             id: message.id,
-            result: { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] },
+            result: { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError },
           };
         } catch (error) {
           return {

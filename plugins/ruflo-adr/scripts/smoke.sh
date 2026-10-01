@@ -160,14 +160,18 @@ grep -q "from './lib/parse-adrs.mjs'" "$ROOT/scripts/import.mjs" || miss="$miss 
 grep -q "from './lib/parse-adrs.mjs'" "$ROOT/scripts/reindex.mjs" || miss="$miss reindex.mjs-not-using-lib"
 [[ -z "$miss" ]] && ok || bad "$miss"
 
-# 20. import.mjs and verify.mjs pass cwd to every memory subprocess call (#2666 point 2)
-step "20. import.mjs + verify.mjs pass cwd: ROOT to every npx memory subprocess"
+# 20. import.mjs and verify.mjs pass an explicit memory-project-root cwd to every
+# memory subprocess call (#2666 point 2). #3097 split this into DB_ROOT (nearest
+# .git/.swarm ancestor of ROOT) so a scan root can differ from the memory-db root;
+# either an explicit ROOT or DB_ROOT satisfies the "not the inherited process cwd"
+# contract this step checks.
+step "20. import.mjs + verify.mjs pass cwd: ROOT/DB_ROOT to every npx memory subprocess"
 miss=""
 imp_calls=$(grep -c "spawnSync('npx'" "$ROOT/scripts/import.mjs")
-imp_cwd=$(grep -c "cwd: ROOT" "$ROOT/scripts/import.mjs")
+imp_cwd=$(grep -c "cwd: ROOT\|cwd: DB_ROOT" "$ROOT/scripts/import.mjs")
 [[ "$imp_calls" -gt 0 && "$imp_cwd" -ge "$imp_calls" ]] || miss="$miss import.mjs($imp_cwd/$imp_calls)"
 ver_calls=$(grep -c "spawnSync('npx'" "$ROOT/scripts/verify.mjs")
-ver_cwd=$(grep -c "cwd: ROOT" "$ROOT/scripts/verify.mjs")
+ver_cwd=$(grep -c "cwd: ROOT\|cwd: DB_ROOT" "$ROOT/scripts/verify.mjs")
 [[ "$ver_calls" -gt 0 && "$ver_cwd" -ge "$ver_calls" ]] || miss="$miss verify.mjs($ver_cwd/$ver_calls)"
 [[ -z "$miss" ]] && ok || bad "$miss"
 

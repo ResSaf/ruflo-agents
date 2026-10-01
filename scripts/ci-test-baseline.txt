@@ -3,9 +3,11 @@
 # Evidence: GitHub Actions run 31859043593 (116 failing test files).
 # Remove entries when fixed. Never add entries to make a regression green.
 plugins/ruflo-adr/scripts/__tests__/adr-create-schema-2651.test.mjs
+plugins/ruflo-adr/scripts/__tests__/import-root-exit-3097.test.mjs
 plugins/ruflo-adr/scripts/__tests__/index-idempotency-2660.test.mjs
 plugins/ruflo-adr/scripts/__tests__/parser-bullets-2659.test.mjs
 plugins/ruflo-adr/scripts/__tests__/skip-brain-dir-2911.test.mjs
+plugins/ruflo-adr/scripts/__tests__/verify-read-safety-3147.test.mjs
 plugins/ruflo-business-pods/scripts/pod-tick.test.mjs
 plugins/ruflo-core/scripts/escape-cmd-arg.test.cjs
 plugins/ruflo-core/scripts/mcp-launch.test.cjs
@@ -123,6 +125,8 @@ v3/plugins/quantum-optimizer/tests/mcp-tools.test.ts
 # ruflo-x-gateway: node:test suite with its own deps (nostr-tools, ws, MCP SDK) — run via `npm test` in plugins/ruflo-x-gateway; root vitest cannot resolve them (same pattern as plugins/ruflo-adr)
 plugins/ruflo-x-gateway/test/gateway.test.mjs
 plugins/ruflo-x-gateway/test/oauth.test.mjs
+plugins/ruflo-x-gateway/test/registration.test.mjs
+plugins/ruflo-x-gateway/test/claude-directory.test.mjs
 
 # ruflo-chatgpt-federation: same pattern — plugin-local deps (jose, nostr-tools/pure) not resolvable from root vitest
 plugins/ruflo-chatgpt-federation/test/oauth.test.mjs

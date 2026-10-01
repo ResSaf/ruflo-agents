@@ -52,6 +52,12 @@ proposed --> accepted --> deprecated
 
 Relationships tracked as causal edges: `supersedes`, `amends`, `depends-on`, `related`.
 
+Body relationship fields accept qualifiers such as `**Amends by scope**:` or
+`**Depends-on / confirms**:`, and `Relates` is an alias for `Related`. Wrapped
+lists may continue on lines containing only ADR references (including Markdown
+links) and separators. Narrative continuation is not scanned for relationships;
+declare additional relationships in another bold field.
+
 ## Compatibility
 
 - **CLI:** pinned to `@claude-flow/cli` v3.6 major+minor.

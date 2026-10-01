@@ -1,0 +1,18 @@
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
+const root=new URL('../',import.meta.url); const read=(p)=>readFileSync(new URL(p,root),'utf8'); const checks=[]; const check=(name,ok)=>{if(!ok)throw new Error(name);checks.push(name)};
+const manifest=JSON.parse(read('.claude-plugin/plugin.json'));
+check('manifest name',manifest.name==='ruflo-ai-team');
+check('manifest semver',/^\d+\.\d+\.\d+$/.test(manifest.version));
+check('manifest keywords',manifest.keywords?.includes('ruvector'));
+check('no component arrays',!manifest.skills&&!manifest.commands&&!manifest.agents);
+for(const dir of ['skills','commands','agents','docs/adrs'])check(`${dir} exists`,existsSync(new URL(dir,root)));
+check('README v3.48 pin',read('README.md').includes('v3.48'));
+check('README namespace',read('README.md').includes('Namespace coordination'));
+check('ADR proposed',read('docs/adrs/0001-multitenant-service-boundary.md').includes('Status: Proposed'));
+check('six skills',readdirSync(new URL('skills/',root),{withFileTypes:true}).filter((entry)=>entry.isDirectory()).length===6);
+check('four agents',readdirSync(new URL('agents/',root)).filter((name)=>name.endsWith('.md')).length===4);
+check('four commands',readdirSync(new URL('commands/',root)).filter((name)=>name.endsWith('.md')).length===4);
+const server=read('src/server.mjs');
+check('fourteen MCP tools',(server.match(/mcp\.tool\('/g)||[]).length+(server.match(/mcp\.registerTool\('/g)||[]).length===14);
+check('explicit annotation factories',server.includes('readOnlyHint: true')&&server.includes('readOnlyHint: false')&&server.includes('destructiveHint: false')&&server.includes('idempotentHint:')&&server.includes('openWorldHint: false'));
+console.log(`smoke ok: ${checks.length} checks`);

@@ -33,6 +33,13 @@ import {
   evaluateToolCall,
 } from './mcp-tools/policy-enforcer.js';
 
+/** A failed task can be valid data; only an explicit error denotes tool failure. */
+function hasToolError(result: unknown): boolean {
+  return result !== null && typeof result === 'object'
+    && typeof (result as { error?: unknown }).error === 'string'
+    && (result as { error: string }).error.trim().length > 0;
+}
+
 // ESM-compatible __dirname
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -842,11 +849,12 @@ export class MCPServerManager extends EventEmitter {
 
           try {
             const result = await callMCPTool(toolName, toolParams, { sessionId });
-            trackRequest(toolName, true);
+            const isError = hasToolError(result);
+            trackRequest(toolName, !isError);
             return {
               jsonrpc: '2.0',
               id: message.id,
-              result: { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] },
+              result: { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }], isError },
             };
           } catch (error) {
             trackRequest(toolName, false);
@@ -930,7 +938,7 @@ export class MCPServerManager extends EventEmitter {
             (input as Record<string, unknown>) || {},
             { sessionId: context?.sessionId || fallbackSessionId }
           );
-          trackRequest(tool.name, true);
+          trackRequest(tool.name, !hasToolError(result));
           return result;
         } catch (error) {
           trackRequest(tool.name, false);

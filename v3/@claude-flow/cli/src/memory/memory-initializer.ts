@@ -9,12 +9,14 @@
  * @module v3/cli/memory-initializer
  */
 
+import { liveMemoryRowSql } from './live-memory-row.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createRequire } from 'node:module';
 import { readFileMaybeEncrypted, writeFileAtomic, writeFileRestricted } from '../fs-secure.js';
 import { restoreMemoryDbFromBackup } from '../services/memory-backup.js';
+import { validateIdentifier } from '../mcp-tools/validate-input.js';
 
 /**
  * ADR-323 — typed memory provenance. Distinguishes WHO/WHAT wrote a memory
@@ -213,14 +215,14 @@ async function getBridge(): Promise<typeof import('./memory-bridge.js') | null> 
  * missing better-sqlite3. Appending the recorded reason turns an unactionable
  * message into a diagnosis.
  */
-async function walRefusalError(operation: 'write' | 'read/write'): Promise<string> {
+async function walRefusalError(operation: 'write' | 'read/write', bridgeDbPath?: string): Promise<string> {
   const base = 'memory database has an active native WAL connection '
     + '(found -wal/-shm sidecar files) — refusing an unsafe sql.js '
     + `whole-image ${operation}. Retry once the native writer completes, or `
     + 'restore the native better-sqlite3 bridge.';
   try {
     const bridge = await getBridge();
-    const reason = bridge?.getBridgeFailureReason?.();
+    const reason = bridge?.getBridgeFailureReason?.(bridgeDbPath);
     if (reason) return `${base} Bridge unavailable: ${reason}`;
   } catch {
     // Diagnostics must never mask the refusal they annotate.
@@ -1300,7 +1302,7 @@ export interface MemoryInitResult {
  * Ensure memory_entries table has all required columns
  * Adds missing columns for older databases (e.g., 'content' column)
  */
-export async function ensureSchemaColumns(dbPath: string): Promise<{
+export async function ensureSchemaColumns(dbPath: string, options: { encryptWrites?: boolean } = {}): Promise<{
   success: boolean;
   columnsAdded: string[];
   error?: string;
@@ -1384,7 +1386,7 @@ export async function ensureSchemaColumns(dbPath: string): Promise<{
       if (modified) {
         // Save updated database
         const data = db.export();
-        writeFileRestricted(dbPath, Buffer.from(data), { encrypt: true });
+        writeFileRestricted(dbPath, Buffer.from(data), { encrypt: options.encryptWrites ?? true });
       }
 
       db.close();
@@ -1504,14 +1506,13 @@ async function activateControllerRegistry(
       return { activated, failed, initTimeMs: performance.now() - startTime };
     }
 
-    const registry = await bridge.getControllerRegistry();
-    if (!registry) {
+    const controllers = await bridge.bridgeListControllers();
+    if (!controllers) {
       return { activated, failed, initTimeMs: performance.now() - startTime };
     }
 
     // Collect controller status from the registry
-    if (typeof registry.listControllers === 'function') {
-      const controllers = registry.listControllers();
+    if (controllers) {
       for (const ctrl of controllers) {
         if (ctrl.enabled) {
           activated.push(ctrl.name);
@@ -2103,7 +2104,7 @@ export async function checkMemoryInitialization(dbPath?: string): Promise<{
     const initSqlJs = (await import('sql.js')).default;
     const SQL = await initSqlJs();
 
-    const fileBuffer = fs.readFileSync(path_);
+    const fileBuffer = readFileMaybeEncrypted(path_, null);
     db = new SQL.Database(fileBuffer);
 
     // Check for metadata table
@@ -2967,7 +2968,7 @@ export async function storeEntry(options: {
       return {
         success: false,
         id: '',
-        error: await walRefusalError('write'),
+        error: await walRefusalError('write', options.dbPath),
       };
     }
 
@@ -3193,8 +3194,8 @@ export async function searchEntries(options: {
           // query (no extra round-trip) so a provenance-filtered search
           // still gets RaBitQ's speedup instead of falling back to brute
           // force.
-          const stmt = db.prepare('SELECT content, embedding, provenance_type FROM memory_entries WHERE id = ? AND status = ?');
-          stmt.bind([candidate.id, 'active']);
+          const stmt = db.prepare(`SELECT content, embedding, provenance_type FROM memory_entries WHERE id = ? AND ${liveMemoryRowSql()}`);
+          stmt.bind([candidate.id]);
           if (stmt.step()) {
             const [content, embeddingJson, provenanceTypeVal] = stmt.get() as [string, string | null, string | null];
             if (provenanceFilter?.length && !provenanceFilter.includes(provenanceTypeVal || 'unknown')) {
@@ -3256,29 +3257,28 @@ export async function searchEntries(options: {
           const db = new SQL.Database(fileBuffer);
           const provenanceByKey = new Map<string, string>();
           for (const r of filtered) {
-            const stmt = db.prepare('SELECT provenance_type FROM memory_entries WHERE namespace = ? AND key = ? LIMIT 1');
+            const stmt = db.prepare(`SELECT provenance_type FROM memory_entries WHERE namespace = ? AND key = ? AND ${liveMemoryRowSql()} LIMIT 1`);
             stmt.bind([r.namespace, r.key]);
             if (stmt.step()) {
-              provenanceByKey.set(`${r.namespace}::${r.key}`, (stmt.get()[0] as string | null) || 'unknown');
+              provenanceByKey.set(JSON.stringify([r.namespace, r.key]), (stmt.get()[0] as string | null) || 'unknown');
             }
             stmt.free();
           }
           db.close();
           filtered = filtered
-            .map(r => ({ ...r, provenanceType: provenanceByKey.get(`${r.namespace}::${r.key}`) || 'unknown' }));
+            .filter(r => provenanceByKey.has(JSON.stringify([r.namespace, r.key])))
+            .map(r => ({ ...r, provenanceType: provenanceByKey.get(JSON.stringify([r.namespace, r.key])) || 'unknown' }));
           if (provenanceFilter?.length) {
             filtered = filtered.filter(r => provenanceFilter.includes(r.provenanceType!));
           }
         } catch {
-          // A requested trust filter fails closed. Unfiltered callers retain
-          // backward-compatible results with an explicit unknown label.
-          filtered = provenanceFilter?.length
-            ? []
-            : filtered.map(r => ({ ...r, provenanceType: 'unknown' }));
+          // An ANN hit alone cannot prove the row is still live. Fall back
+          // to the authoritative SQL scan if liveness cannot be checked.
+          filtered = [];
         }
       }
 
-      if (!provenanceFilter?.length || filtered.length >= limit) {
+      if (filtered.length >= limit) {
         return {
           success: true,
           results: filtered.slice(0, limit),
@@ -3300,7 +3300,7 @@ export async function searchEntries(options: {
     // Get entries with embeddings
     // ADR-323: build the WHERE clause incrementally so namespace and
     // provenance filters compose (both, either, or neither).
-    const whereClauses = [`status = 'active'`];
+    const whereClauses = [liveMemoryRowSql()];
     const whereParams: (string)[] = [];
     if (effectiveNamespace !== 'all') {
       whereClauses.push('namespace = ?');
@@ -3418,6 +3418,8 @@ export async function listEntries(options: {
   limit?: number;
   offset?: number;
   dbPath?: string;
+  /** Internal native-mirror writes must remain plaintext, including schema migration. */
+  encryptWrites?: boolean;
   /** #2073: When true, include the entry's full `content` string in each result. */
   includeContent?: boolean;
   /** ADR-323: restrict rows to these provenance types. */
@@ -3476,8 +3478,15 @@ export async function listEntries(options: {
       return { success: false, entries: [], total: 0, error: 'Database not found' };
     }
 
+    // Listing can migrate/backfill the schema, so it is also a whole-image
+    // writer. The newly selected native mirror may still have a live WAL.
+    await releaseOwnNativeHandle(dbPath);
+    if (hasNativeWalSidecars(dbPath)) {
+      return { success: false, entries: [], total: 0, error: await walRefusalError('read/write') };
+    }
+
     // Ensure schema has all required columns (migration for older DBs)
-    await ensureSchemaColumns(dbPath);
+    await ensureSchemaColumns(dbPath, options);
 
     const initSqlJs = (await import('sql.js')).default;
     const SQL = await initSqlJs();
@@ -3489,7 +3498,7 @@ export async function listEntries(options: {
     // that predate the status column may have NULL after migration.
     // See memory-bridge.ts:bridgeListEntries for full context.
     // Get total count
-    const whereClauses = [ACTIVE_MEMORY_ROW_SQL];
+    const whereClauses = [liveMemoryRowSql()];
     const whereParams: string[] = [];
     if (namespace) {
       whereClauses.push('namespace = ?');
@@ -3642,7 +3651,7 @@ export async function getEntry(options: {
       return {
         success: false,
         found: false,
-        error: await walRefusalError('read/write'),
+        error: await walRefusalError('read/write', options.dbPath),
       };
     }
 
@@ -3665,7 +3674,7 @@ export async function getEntry(options: {
       const getStmt = db.prepare(`
         SELECT id, key, namespace, content, embedding, access_count, created_at, updated_at, tags
         FROM memory_entries
-        WHERE ${ACTIVE_MEMORY_ROW_SQL}
+        WHERE ${liveMemoryRowSql()}
           AND key = ?
           AND namespace = ?
         LIMIT 1
@@ -3742,6 +3751,8 @@ export async function deleteEntry(options: {
   key: string;
   namespace?: string;
   dbPath?: string;
+  /** Internal native-mirror writes must remain plaintext, including schema migration. */
+  encryptWrites?: boolean;
 }): Promise<{
   success: boolean;
   deleted: boolean;
@@ -3796,7 +3807,7 @@ export async function deleteEntry(options: {
         key,
         namespace,
         remainingEntries: 0,
-        error: await walRefusalError('write'),
+        error: await walRefusalError('write', options.dbPath),
       };
     }
 
@@ -3804,7 +3815,7 @@ export async function deleteEntry(options: {
     // writer's flush resurrects the row this call just tombstoned.
     return await withMemoryDbLock(dbPath, async () => {
       // Ensure schema has all required columns (migration for older DBs)
-      await ensureSchemaColumns(dbPath);
+      await ensureSchemaColumns(dbPath, options);
 
       const initSqlJs = (await import('sql.js')).default;
       const SQL = await initSqlJs();
@@ -3861,7 +3872,7 @@ export async function deleteEntry(options: {
 
       // Save updated database
       const data = db.export();
-      writeFileRestricted(dbPath, Buffer.from(data), { encrypt: true });
+      writeFileRestricted(dbPath, Buffer.from(data), { encrypt: options.encryptWrites ?? true });
 
       db.close();
 
@@ -3982,11 +3993,11 @@ export async function withMemoryDbLock<T>(dbPath: string, fn: () => Promise<T> |
   }
 }
 
-const NAMESPACE_PATTERN = /^[A-Za-z0-9._-]{1,128}$/;
-
 export async function purgeNamespace(options: {
   namespace: string;
   dbPath?: string;
+  /** Internal native-mirror writes must remain plaintext, including schema migration. */
+  encryptWrites?: boolean;
 }): Promise<{
   success: boolean;
   deletedCount: number;
@@ -3995,8 +4006,11 @@ export async function purgeNamespace(options: {
 }> {
   const { namespace, dbPath: customPath } = options;
 
-  if (!NAMESPACE_PATTERN.test(namespace)) {
-    return { success: false, deletedCount: 0, remainingEntries: 0, error: `Invalid namespace: ${namespace}` };
+  // #3570: the same validator store, import and export use, so any namespace
+  // that can be written can also be purged (`team:alice` included).
+  const vNs = validateIdentifier(namespace, 'namespace');
+  if (!vNs.valid) {
+    return { success: false, deletedCount: 0, remainingEntries: 0, error: `Invalid namespace: ${vNs.error}` };
   }
 
   const swarmDir = getMemoryRoot();
@@ -4028,7 +4042,13 @@ export async function purgeNamespace(options: {
         return { success: false, deletedCount: 0, remainingEntries: 0, error: 'Database not found' };
       }
 
-      await ensureSchemaColumns(dbPath);
+      // Recheck at mutation time even when the CLI already read a preview.
+      await releaseOwnNativeHandle(dbPath);
+      if (hasNativeWalSidecars(dbPath)) {
+        return { success: false, deletedCount: 0, remainingEntries: 0, error: await walRefusalError('write') };
+      }
+
+      await ensureSchemaColumns(dbPath, options);
 
       const initSqlJs = (await import('sql.js')).default;
       const SQL = await initSqlJs();
@@ -4045,7 +4065,7 @@ export async function purgeNamespace(options: {
       const remainingEntries = (countResult[0]?.values?.[0]?.[0] as number) || 0;
 
       const data = db.export();
-      writeFileRestricted(dbPath, Buffer.from(data), { encrypt: true });
+      writeFileRestricted(dbPath, Buffer.from(data), { encrypt: options.encryptWrites ?? true });
       db.close();
 
       if (deletedCount > 0 && hnswIndex?.entries) {

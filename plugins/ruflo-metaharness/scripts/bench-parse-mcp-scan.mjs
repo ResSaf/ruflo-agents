@@ -24,8 +24,16 @@
 //   0  ok (or threshold satisfied)
 //   1  --max-mean-us exceeded by any category
 
+import { guardCliArgs } from './_cli-args.mjs';
+
 import { performance } from 'node:perf_hooks';
 import { parseMcpScanText } from './_harness.mjs';
+
+guardCliArgs(import.meta.url, {
+  '--iters': 'value',
+  '--format': 'value',
+  '--max-mean-us': 'value',
+});
 
 const ARGS = (() => {
   const a = { iters: 100_000, format: 'table', maxMeanUs: null };
