@@ -1,0 +1,433 @@
+/**
+ * Everything the console does over time, as plain functions over a Host: the disk refresh and the event diff, the CLI
+ * probes, the pane's lifecycle (auto-open without taking the keys), and the animation loop. Actions go through
+ * ./runner. Nothing here reaches `$` but through the Host.
+ */
+import { actionsOf } from './bindings'
+import type { Catalog } from './data/catalog'
+import { PROBES, type ProbeResult } from './data/cli'
+import { diffEvents, record } from './data/events'
+import { plain } from './data/parse'
+import { readSnapshot } from './data/snapshot'
+import { markPicture } from './gfx/pictures'
+import type { Host } from './host'
+import { agentLogs } from './ops'
+import { createRunner, type Runner } from './runner'
+import { CLI_PREFIXES, PANE_ID, push, rowsOf, storeKeyOf, type State } from './state'
+import type { Actions } from './views/common'
+import { picturesOf } from './views/frames'
+
+const ACTIVITY_BUCKET_MS = 5_000
+const PANE_WATCH_MS = 1_000
+const MAX_PARALLEL_PROBES = 2
+const BAR_FRESH_MS = 10_000
+const IDLE_REFRESH_MS = 30_000
+const TOOLS_RECOUNT_MS = 30_000
+
+export type Controller = {
+  refresh: () => Promise<void>
+  probe: (force?: boolean) => Promise<void>
+  start: () => void
+  /** Restarts the pane's watch after a reload left the pane up and the timers gone. */
+  resume: () => void
+  stop: () => void
+  open: (focus?: boolean) => Promise<{ isPlaced: boolean; reason: string }>
+  /** At session start, with `panel: auto`: opens where it docks, never taking the keys; else leaves a hint. */
+  autoOpen: () => void
+  /** The person closed the pane (Esc, its mark): auto-open stands down until /ruflo opens it again. */
+  closedByPerson: () => void
+  close: () => Promise<void>
+  setView: (view: State['view']) => void
+  drill: (agentId: string) => void
+  animate: () => void
+  noteToolCall: (agentId: string | undefined, tool: string) => void
+  actions: Actions
+  runner: Runner
+  host: Host
+  /** The command catalog, once `/ruflo commands` has read it. */
+  catalog?: Promise<Catalog>
+  /** Blits the band's mark while Claude works; the band calls it with its requestId. */
+  markFrame: (requestId: string, isWorking: boolean) => void
+}
+
+/** With the band off, the console's words ride ruflo-mods' status line instead: claims and a stale marketplace only. */
+export function segmentOf(state: State): string | null {
+  const claims = state.snapshot?.claims ?? []
+  const parts = [claims.length > 0 ? `${claims.length} claims` : '', state.snapshot?.plugins.missingFromClone.length ? 'marketplace stale' : ''].filter(Boolean)
+
+  return parts.length === 0 ? null : parts.join(' · ')
+}
+
+const sorted = (values: readonly number[]) => [...values].sort((a, b) => a - b)
+
+export const median = (values: readonly number[]) => sorted(values)[Math.floor(values.length / 2)] ?? 0
+export const p95 = (values: readonly number[]) => sorted(values)[Math.min(values.length - 1, Math.floor(values.length * 0.95))] ?? 0
+
+export function createController(state: State, host: Host): Controller {
+  let activityCount = 0
+  let markRequest: string | null = null
+  let lastSegment: string | null | undefined
+  let lastSpend: number | undefined
+  let hasDrawn = false
+  let toolsCountedAt = 0
+  let inflight: Promise<void> | null = null
+  const lastAttempt = new Map<string, number>()
+
+  const persist = () => void host.storeSet(storeKeyOf(state.cwd), { view: state.view === 'agent' ? state.back : state.view, isClosedByPerson: state.pane.isClosedByPerson }).catch(() => undefined)
+  const isVisible = () => state.pane.isOpen && state.pane.isShown
+
+  function refresh(): Promise<void> {
+    inflight ??= readAll().finally(() => {
+      inflight = null
+    })
+
+    return inflight
+  }
+
+  /** A read that starts after this call: what an action checks, since a read already running may predate its write. */
+  async function freshRead(): Promise<void> {
+    await inflight?.catch(() => undefined)
+
+    // A file the action just created must not wait out the missing-file backoff.
+    for (const [path, held] of state.cache) {
+      if ('missingUntilMs' in held) state.cache.delete(path)
+    }
+
+    await refresh()
+  }
+
+  async function readAll(): Promise<void> {
+    state.isRefreshing = true
+
+    const started = Date.now()
+
+    try {
+      // Claude Code connects MCP servers after the session starts: count the ruflo tools again now and then.
+      if (Date.now() - toolsCountedAt >= TOOLS_RECOUNT_MS) {
+        toolsCountedAt = Date.now()
+        void host.rufloTools().then(counted => void (state.rufloTools = counted), () => undefined)
+      }
+
+      const [settings, usage, ruflo, route] = await Promise.all([
+        host.settings().catch(() => null),
+        host.usage().catch(() => null),
+        host.rufloSnapshot().catch((error: unknown) => {
+          state.ruflo.error = plain(String(error), 120)
+
+          return null
+        }),
+        host.rufloRoute().catch(() => null),
+      ])
+      const previous = state.snapshot
+      const now = Date.now()
+      const snapshot = await readSnapshot(host.fs, state.cache, state.cwd, state.home, settings, now, state.configDir)
+
+      state.snapshot = snapshot
+      record(state.events, diffEvents(previous, snapshot, now))
+
+      if (route !== null && route.agent !== state.ruflo.route?.agent) record(state.events, [{ atMs: now, kind: 'learning', text: `router picked ${route.agent} (${Math.round(route.confidence * 100)}%)` }])
+
+      state.usage = usage
+      state.ruflo.snapshot = ruflo
+      state.ruflo.route = route ?? ruflo?.lastRoute ?? null
+      push(state.writes, snapshot.changed)
+
+      for (const agent of snapshot.agents.slice(0, 200)) {
+        const log = state.statusLog.get(agent.id) ?? []
+
+        if (log.at(-1)?.status !== agent.status) push(log, { atMs: now, status: agent.status }, 100)
+        state.statusLog.set(agent.id, log)
+      }
+
+      const patterns = snapshot.neural?.patterns
+
+      if (patterns !== undefined && state.history.patterns.at(-1)?.value !== patterns) push(state.history.patterns, { atMs: now, value: patterns })
+      if (usage?.costUsd !== undefined && state.history.spend.at(-1)?.value !== usage.costUsd) push(state.history.spend, { atMs: now, value: usage.costUsd })
+      if ((snapshot.outcomes?.total ?? 0) > state.history.outcomes) {
+        if (state.history.outcomes > 0) state.curveGrewAtMs = now
+        state.history.outcomes = snapshot.outcomes?.total ?? 0
+      }
+
+      if (state.options.bar === 'off') {
+        const text = segmentOf(state)
+
+        if (text !== lastSegment) {
+          lastSegment = text
+          void host.rufloSegment(text).catch(() => undefined)
+        }
+      }
+    } catch (error) {
+      state.ruflo.error = plain(String(error), 120)
+    } finally {
+      state.isRefreshing = false
+      push(state.stats.refreshes, Date.now() - started, 200)
+
+      // Redraw only for something new while the pane is closed: the band need not repaint an unchanged line.
+      const spend = state.usage?.costUsd
+
+      if (state.pane.isOpen || (state.snapshot?.changed ?? 0) > 0 || spend !== lastSpend || !hasDrawn) {
+        hasDrawn = true
+        lastSpend = spend
+        host.invalidate()
+      }
+    }
+  }
+
+  const probesInFlight = new Map<string, Promise<void>>()
+
+  /** One probe run at a time per probe: a second ask while it runs joins it. */
+  function runProbe(probe: (typeof PROBES)[number]): Promise<void> {
+    const held = probesInFlight.get(probe.id)
+
+    if (held !== undefined) return held
+
+    const run = runProbeOnce(probe).finally(() => probesInFlight.delete(probe.id))
+
+    probesInFlight.set(probe.id, run)
+
+    return run
+  }
+
+  async function runProbeOnce(probe: (typeof PROBES)[number]): Promise<void> {
+    const held: ProbeResult = state.probes.get(probe.id) ?? { value: null, okAtMs: null, error: null, errorAtMs: null, isRunning: false }
+
+    state.probes.set(probe.id, { ...held, isRunning: true })
+    lastAttempt.set(probe.id, Date.now())
+
+    try {
+      const result = await host.run([...CLI_PREFIXES[state.options.cli], ...probe.args], probe.timeoutMs)
+      const value = result.exitCode === 0 ? (probe.parse(result.stdout) as unknown) : null
+
+      state.probes.set(
+        probe.id,
+        value !== null
+          ? { value, okAtMs: Date.now(), error: null, errorAtMs: held.errorAtMs, isRunning: false }
+          : {
+              ...held,
+              isRunning: false,
+              errorAtMs: Date.now(),
+              error: result.exitCode !== 0 ? `exit ${result.exitCode}: ${plain(result.stderr.split('\n').find(line => line.trim() !== '') ?? '', 100) || 'no message'}` : 'no JSON in the CLI output',
+            },
+      )
+    } catch (error) {
+      state.probes.set(probe.id, { ...held, isRunning: false, errorAtMs: Date.now(), error: plain(error instanceof Error ? error.message : String(error), 100) || 'refused' })
+    } finally {
+      host.invalidate()
+    }
+  }
+
+  /** Runs the probes the view in front draws, each no more often than its cadence; `force` ignores the cadence. */
+  async function probe(force = false): Promise<void> {
+    const now = Date.now()
+    const due = PROBES.filter(
+      entry =>
+        (isVisible() || force) &&
+        entry.views.includes(state.view) &&
+        (!entry.isNetwork || state.options.federationNetwork) &&
+        (force || (state.probes.get(entry.id)?.isRunning !== true && now - (lastAttempt.get(entry.id) ?? 0) >= entry.everyMs)),
+    )
+
+    for (let i = 0; i < due.length; i += MAX_PARALLEL_PROBES) {
+      await Promise.all(due.slice(i, i + MAX_PARALLEL_PROBES).map(entry => runProbe(entry)))
+    }
+  }
+
+  function every(name: string, ms: number, fn: () => void): void {
+    if (!state.timers.has(name)) state.timers.set(name, host.every(ms, fn))
+  }
+
+  function cancel(name: string): void {
+    state.timers.get(name)?.cancel()
+    state.timers.delete(name)
+  }
+
+  /** One frame of every picture of the view in front, each blitted only at the size it was mounted. */
+  function frame(): void {
+    const started = Date.now()
+
+    for (const [key, grid] of picturesOf(state, state.pane.columns, Date.now(), Date.now())) {
+      const mounted = state.mounted.get(key)
+
+      if (mounted !== undefined && mounted.columns === grid.columns && mounted.rows === grid.rows) {
+        host.blit({ requestId: PANE_ID, key, cells: grid.encode(), columns: grid.columns, rows: grid.rows })
+      }
+    }
+
+    push(state.stats.frames, Date.now() - started, 200)
+  }
+
+  /** Runs the frame loop while the pane is shown and holds the keys, at `fps`; stops it otherwise. */
+  function animate(): void {
+    if (!(state.options.fps > 0 && isVisible() && state.pane.isFocused && state.mounted.size > 0)) {
+      cancel('frames')
+
+      return
+    }
+
+    every('frames', Math.round(1000 / state.options.fps), frame)
+  }
+
+  /** Watches whether the pane is shown and focused, so the loop stops behind another tab and resumes in front. */
+  async function watchPane(): Promise<void> {
+    const panes = await host.panes().catch(() => null)
+    const mine = panes?.find(pane => pane.id === PANE_ID)
+
+    if (panes !== null) {
+      state.pane.isOpen = mine !== undefined
+      state.pane.isShown = mine?.isShown === true
+      state.pane.isFocused = mine?.isFocused === true
+    }
+
+    if (!state.pane.isOpen) cancel('watch')
+
+    animate()
+  }
+
+  function start(): void {
+    let lastIdleMs = 0
+
+    every('refresh', state.options.refreshSeconds * 1000, () => {
+      const now = Date.now()
+      const isSeen = state.pane.isOpen || now - state.barDrawnAtMs < BAR_FRESH_MS
+
+      // Nothing on screen reads the disk: re-read only on the idle cadence, so a closed console costs nearly nothing.
+      if (isSeen || now - lastIdleMs >= IDLE_REFRESH_MS) {
+        lastIdleMs = now
+        void refresh().then(() => probe())
+      }
+    })
+    every('activity', ACTIVITY_BUCKET_MS, () => {
+      push(state.activity, activityCount)
+      activityCount = 0
+    })
+  }
+
+  const resume = () => every('watch', PANE_WATCH_MS, () => void watchPane())
+
+  function stop(): void {
+    for (const timer of state.timers.values()) timer.cancel()
+    state.timers.clear()
+  }
+
+  async function open(focus = true): Promise<{ isPlaced: boolean; reason: string }> {
+    try {
+      const result = await host.openPane({ id: PANE_ID, title: 'ruflo', rows: rowsOf(state.view), ...(focus && { focus: true, closeOnEscape: true, holdToasts: true }) })
+      const isPlaced = result === undefined || result.isPlaced !== false
+
+      state.pane.isOpen = isPlaced
+      state.pane.isShown = isPlaced
+      if (focus) state.pane.isClosedByPerson = false
+      if (isPlaced) persist()
+      resume()
+      void refresh().then(() => probe(true))
+
+      return { isPlaced, reason: result?.reason ?? '' }
+    } catch (error) {
+      return { isPlaced: false, reason: plain(error instanceof Error ? error.message : String(error), 160) }
+    }
+  }
+
+  function autoOpen(): void {
+    if (state.options.panel !== 'auto' || state.snapshot?.isRufloProject !== true || state.pane.isOpen || state.pane.isClosedByPerson || state.pane.autoTried) return
+
+    state.pane.autoTried = true
+    // From a timer, never a render hook; without `focus`, so the prompt keeps the keys. The engine seats an unasked pane
+    // only where it docks (144 columns and up) and answers why not otherwise: the band then says "/ruflo to open".
+    state.timers.set(
+      'auto-open',
+      host.after(50, () => {
+        state.timers.delete('auto-open')
+        void open(false).then(result => {
+          state.pane.autoReason = result.isPlaced ? '' : result.reason || 'not placed'
+          host.invalidate()
+        })
+      }),
+    )
+  }
+
+  async function close(): Promise<void> {
+    state.pane.isOpen = false
+    state.pane.isShown = false
+    state.pane.isClosedByPerson = true
+    persist()
+    cancel('frames')
+    cancel('watch')
+    await host.closePane(PANE_ID).catch(() => undefined)
+  }
+
+  function setView(view: State['view']): void {
+    state.isHelp = false
+    state.palette.isOpen = false
+
+    if (view !== state.view) {
+      if (view === 'agent' || state.view !== 'agent') state.back = state.view === 'agent' ? state.back : state.view
+      state.view = view
+      state.select.item = 0
+      state.mounted.clear()
+      persist()
+      // A new view asks for its own height inline; the dock ignores it.
+      if (state.pane.isOpen) void host.openPane({ id: PANE_ID, title: 'ruflo', rows: rowsOf(view) }).catch(() => undefined)
+      void probe(true)
+    }
+
+    host.invalidate()
+  }
+
+  function drill(agentId: string): void {
+    const agent = state.snapshot?.agents.find(entry => entry.id === agentId)
+
+    state.drill = { agentId, logs: null, logsAtMs: 0 }
+    setView('agent')
+
+    const spec = agent === undefined ? null : agentLogs(agent)
+
+    if (spec !== null) {
+      void host
+        .run([...CLI_PREFIXES[state.options.cli], ...spec.args], 30_000)
+        .then(result => {
+          if (state.drill.agentId === agentId) state.drill = { agentId, logs: result.stdout.split('\n').map(line => plain(line, 160)).filter(Boolean).slice(-12), logsAtMs: Date.now() }
+        })
+        .catch(() => undefined)
+        .finally(() => host.invalidate())
+    }
+  }
+
+  const runner = createRunner(state, host, {
+    freshRead,
+    setView,
+    drill,
+    command: name => (name === 'refresh' ? actions.refresh() : name === 'help' ? actions.help() : actions.close()),
+  })
+  const actions: Actions = actionsOf(state, host, runner, { freshRead, probe, setView, drill, close })
+
+  function markFrame(requestId: string, isWorking: boolean): void {
+    markRequest = requestId
+
+    if (isWorking && state.options.fps > 0) {
+      every('mark', Math.round(1000 / state.options.fps), () => {
+        if (markRequest !== null) host.blit({ requestId: markRequest, key: 'mark', cells: markPicture(true, Date.now()).encode(), columns: 2, rows: 1 })
+      })
+    } else {
+      cancel('mark')
+    }
+  }
+
+  function noteToolCall(agentId: string | undefined, tool: string): void {
+    activityCount += 1
+
+    const who = agentId ?? 'main'
+    const list = state.toolsByAgent.get(who) ?? []
+
+    push(list, { atMs: Date.now(), tool: plain(tool, 40) }, 200)
+    state.toolsByAgent.set(who, list)
+    if (state.toolsByAgent.size > 50) state.toolsByAgent.delete(state.toolsByAgent.keys().next().value as string)
+    record(state.events, [{ atMs: Date.now(), kind: 'tools', text: `${who === 'main' ? 'claude' : who}: ${plain(tool, 40)}` }])
+  }
+
+  const closedByPerson = () => {
+    state.pane.isClosedByPerson = true
+    persist()
+  }
+
+  return { refresh, probe, start, resume, stop, open, autoOpen, closedByPerson, close, setView, drill, animate, noteToolCall, actions, runner, markFrame, host }
+}

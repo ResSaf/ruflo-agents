@@ -1,0 +1,39 @@
+import type { CommandSpec, PaneOpenArgs, ProcessRunResult, Timer, UiBlitArgs } from 'claude-code'
+
+import type { ReaderFs } from './data/files'
+import type { RufloRoute, RufloSnapshot } from '../types'
+
+/** What `$.ui.open` answers: drawn, or held back with the reason. A build that answers nothing has drawn it. */
+export type OpenResult = { isPlaced: boolean; reason?: string } | void
+
+/**
+ * The engine as `session.start` bound it. Every later hook, timer and button reaches the engine through this, so the
+ * controller is plain functions over an interface a test can stand in for. Any member may be refused (an administrator
+ * removed the affordance, a policy mod said no): every caller catches, and a refusal is a missing fact, never a crash.
+ */
+export type Host = {
+  fs: ReaderFs
+  every: (ms: number, fn: () => void) => Timer
+  after: (ms: number, fn: () => void) => Timer
+  storeGet: (key: string) => Promise<unknown>
+  storeSet: (key: string, value: unknown) => Promise<void>
+  invalidate: () => void
+  /** Fire and forget: a blit resolves only once painted, and blits between frames fold anyway. */
+  blit: (args: UiBlitArgs) => void
+  openPane: (pane: PaneOpenArgs) => Promise<OpenResult>
+  closePane: (id: string) => Promise<void>
+  panes: () => Promise<readonly { id: string; isShown: boolean; isFocused: boolean }[]>
+  registerCommand: (spec: CommandSpec) => Promise<unknown>
+  run: (argv: readonly string[], timeoutMs: number) => Promise<ProcessRunResult>
+  usage: () => Promise<{ costUsd?: number; contextPercent?: number }>
+  /** The ruflo / claude-flow MCP tools the model can call now, and the servers they come from. */
+  rufloTools: () => Promise<{ tools: number; servers: string[] }>
+  settings: () => Promise<unknown>
+  home: () => Promise<string | undefined>
+  configDir: () => Promise<string | undefined>
+  /** This plugin's folder: where its own files (the command catalog) are. */
+  pluginRoot: string
+  rufloSnapshot: () => Promise<RufloSnapshot>
+  rufloRoute: () => Promise<RufloRoute | null>
+  rufloSegment: (text: string | null) => Promise<void>
+}

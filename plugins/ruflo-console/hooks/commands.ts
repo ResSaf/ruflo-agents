@@ -1,0 +1,112 @@
+/**
+ * `/ruflo`, the one command for every ruflo mod. Pure: it reads the arguments into an intent; register.ts carries it
+ * out. `mods` and `swarm <sub>` belong to ruflo-mods and ruflo-swarm, which hook the same command; the console passes
+ * them on and answers only when neither is loaded. Every pane key has a subcommand here, since keys need focus.
+ */
+import { EVENT_KINDS, type EventKind } from './data/events'
+import { VIEWS, viewOf, type ViewId } from './state'
+
+export const SWARM_SUBS = ['pane', 'status', 'topology', 'claims', 'consensus'] as const
+
+export type Intent =
+  | { kind: 'open'; view: ViewId | null }
+  | { kind: 'help' }
+  | { kind: 'close' }
+  | { kind: 'status' }
+  | { kind: 'delegate'; owner: 'ruflo-mods' | 'ruflo-swarm'; words: string }
+  | { kind: 'palette'; query: string }
+  | { kind: 'run'; paletteId: string; text: string }
+  | { kind: 'confirm'; isYes: boolean }
+  | { kind: 'agent'; who: string }
+  | { kind: 'back' }
+  | { kind: 'select'; by: number }
+  | { kind: 'filter'; filter: 'all' | EventKind }
+  | { kind: 'dump'; view: ViewId | null }
+  | { kind: 'commands'; query: string }
+  | { kind: 'unknown'; word: string }
+
+export function parseRuflo(args: string): Intent {
+  const words = args.trim().split(/\s+/).filter(Boolean)
+  const [head = '', second = ''] = words.map(word => word.toLowerCase())
+  const rest = args.trim().slice(words[0]?.length ?? 0).trim()
+
+  switch (head) {
+    case '':
+    case 'open':
+      return { kind: 'open', view: null }
+    case 'help':
+    case '?':
+      return { kind: 'help' }
+    case 'close':
+      return { kind: 'close' }
+    case 'status':
+      return { kind: 'status' }
+    case 'mods':
+      return { kind: 'delegate', owner: 'ruflo-mods', words: rest }
+    case 'swarm':
+      return (SWARM_SUBS as readonly string[]).includes(second) ? { kind: 'delegate', owner: 'ruflo-swarm', words: rest } : { kind: 'open', view: 'swarm' }
+    case 'palette':
+    case 'p':
+      return { kind: 'palette', query: rest }
+    case 'run':
+    case 'act':
+      return second === '' ? { kind: 'palette', query: '' } : { kind: 'run', paletteId: second, text: rest.slice(second.length).trim() }
+    case 'yes':
+    case 'y':
+      return { kind: 'confirm', isYes: true }
+    case 'no':
+    case 'n':
+      return { kind: 'confirm', isYes: false }
+    case 'agent':
+      return second === '' ? { kind: 'open', view: 'swarm' } : { kind: 'agent', who: words[1] ?? '' }
+    case 'back':
+      return { kind: 'back' }
+    case 'next':
+    case 'j':
+      return { kind: 'select', by: 1 }
+    case 'prev':
+    case 'k':
+      return { kind: 'select', by: -1 }
+    case 'commands':
+    case 'catalog':
+      return { kind: 'commands', query: rest }
+    case 'dump':
+    case 'text':
+      return { kind: 'dump', view: second === '' ? null : viewOf(second) }
+    case 'filter':
+      return { kind: 'filter', filter: (EVENT_KINDS as readonly string[]).includes(second) ? (second as EventKind) : 'all' }
+    default: {
+      const view = viewOf(head)
+
+      return view !== null ? { kind: 'open', view } : { kind: 'unknown', word: head }
+    }
+  }
+}
+
+export const HELP = [
+  '/ruflo — the ruflo console and every ruflo mod command',
+  '',
+  'Open and switch',
+  `  /ruflo                     open the cockpit (also opens by itself where it can dock, panel=auto)`,
+  `  /ruflo <view>              ${VIEWS.map(view => `${view.id} (${view.key})`).join(', ')}`,
+  '  /ruflo agent <id|name>     drill into one agent: role, task, claims, activity, logs, timeline',
+  '  /ruflo back | close | status',
+  '  /ruflo dump <view>         a view as plain text, without the pane (for claude -p and scripts)',
+  '  /ruflo commands [word]     browse the ruflo command catalog (ADR-406): every command, who owns it, how it runs',
+  '',
+  'Act (each change asks to confirm; /ruflo yes or /ruflo no answers without focus)',
+  '  /ruflo palette [query]     the command palette (key p): spawn, claims, swarm, votes, workers, memory',
+  '  /ruflo run <entry> [text]  run a palette entry by id, e.g. run spawn-coder, run route fix the login bug',
+  '  /ruflo next | prev         move the selection (keys j / k)',
+  '  /ruflo filter <kind>       events view filter: all, swarm, claims, federation, learning, tools, mods, missions',
+  '',
+  'Other mods (answered by their own plugin)',
+  '  /ruflo mods                ruflo-mods: what this session routed, recorded and tightened (was /ruflo-mods)',
+  '  /ruflo swarm pane|status|topology|claims|consensus   ruflo-swarm (was /ruflo-swarm-*)',
+  '',
+  'Pane keys (while it holds the keyboard: /ruflo opens it with the keys, or click it; ctrl+x tab reaches the band, not the pane)',
+  '  1-9 views · g timeline · q approvals · e events · m missions · p palette · x actions for the selection',
+  '  j/k select · d drill in · b back · r refresh · h help · f event filter · y/n confirm',
+  '  Esc: a pane /ruflo opened closes; one that opened by itself (panel=auto) only hands the keys back. ✕ or /ruflo close closes either',
+  '  (? and Enter cannot be pane hotkeys in this Claude Code build: use h, and d to drill in)',
+].join('\n')

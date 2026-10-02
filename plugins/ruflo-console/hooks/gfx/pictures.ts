@@ -1,0 +1,226 @@
+/**
+ * The animated pictures of the overview, swarm and learning views, each a pure function of its data, its size and the
+ * real clock `t` (ms). The render and every `$.ui.blit` frame call the same function with the same size, so a frame
+ * always fits the mounted Raster. What motion means is said beside each picture: data where it is data, decoration
+ * where it is not.
+ */
+import { Braille, COLOR, Grid, mix, ramp, sparkline } from './raster'
+
+export type TopoNode = { id: string; label: string; status: string; isLeader: boolean; /** When the console last saw an event about it. */ pulseAtMs?: number }
+export type TopoModel = { topology: string; nodes: TopoNode[] }
+
+export const PULSE_MS = 1_400
+const isBusy = (status: string) => /busy|active|running|working/i.test(status)
+const isDown = (status: string) => /stop|terminat|offline|dead|error|fail/i.test(status)
+
+export function nodeColor(node: TopoNode): number {
+  if (node.isLeader) return COLOR.accent
+  if (isDown(node.status)) return /error|fail/i.test(node.status) ? COLOR.bad : COLOR.dim
+  if (isBusy(node.status)) return COLOR.warn
+
+  return COLOR.info
+}
+
+/**
+ * Where each node sits, in braille dots, by topology: a tree (rows of workers under the leader) for hierarchical and
+ * star, a circle for mesh and ring. Large swarms wrap into more rows rather than overprinting.
+ */
+export function layout(model: TopoModel, width: number, height: number): { x: number; y: number }[] {
+  const n = model.nodes.length
+  const topology = model.topology.toLowerCase()
+  const isCircle = (topology.includes('mesh') && !topology.includes('hierarchical')) || topology.includes('ring')
+
+  if (n === 0) return []
+
+  if (!isCircle) {
+    const workers = n - 1
+    const perRow = Math.max(1, Math.min(workers, Math.floor(width / 10)))
+    const tiers = Math.max(1, Math.ceil(workers / perRow))
+    const top = 3
+    const span = Math.max(4, height - 6 - top)
+
+    return model.nodes.map((_, i) => {
+      if (i === 0) return { x: width / 2, y: top }
+
+      const k = i - 1
+      const tier = Math.floor(k / perRow)
+      const inTier = Math.min(perRow, workers - tier * perRow)
+      const slot = k % perRow
+
+      return { x: ((slot + 0.5) / inTier) * (width - 8) + 4, y: top + 6 + (tiers === 1 ? span - 2 : (tier / Math.max(1, tiers - 1)) * (span - 2)) }
+    })
+  }
+
+  const cx = width / 2
+  const cy = height / 2
+  const r = Math.max(4, Math.min(width / 2 - 6, height / 2 - 3))
+
+  return model.nodes.map((_, i) => {
+    const angle = -Math.PI / 2 + (i / n) * Math.PI * 2
+
+    return { x: cx + Math.cos(angle) * r * 1.6, y: cy + Math.sin(angle) * r }
+  })
+}
+
+/** The edges a topology draws between node indexes (capped: a 100-agent mesh draws its first 300). */
+export function edges(model: TopoModel): [number, number][] {
+  const n = model.nodes.length
+  const out: [number, number][] = []
+  const topology = model.topology.toLowerCase()
+
+  if (n < 2) return out
+
+  if (topology.includes('mesh') && !topology.includes('hierarchical')) {
+    for (let a = 0; a < n && out.length < 300; a++) for (let b = a + 1; b < n && out.length < 300; b++) out.push([a, b])
+  } else if (topology.includes('ring')) {
+    for (let a = 0; a < n; a++) out.push([a, (a + 1) % n])
+  } else {
+    for (let b = 1; b < n; b++) out.push([0, b])
+    if (topology.includes('hierarchical-mesh')) for (let a = 1; a < n - 1; a++) out.push([a, a + 1])
+  }
+
+  return out
+}
+
+/**
+ * The swarm graph: nodes coloured by the status ruflo wrote (busy amber, idle blue, stopped grey), the leader starred.
+ * A dot runs from the leader to a node once each time the console sees an event about that agent (data); the leader's
+ * slow heartbeat is decoration.
+ */
+export function topologyPicture(model: TopoModel, columns: number, rows: number, t: number): Grid {
+  const grid = new Grid(columns, rows)
+  const canvas = new Braille(columns, rows)
+  const points = layout(model, canvas.width, canvas.height)
+  const links = edges(model)
+  const leader = points[0]
+
+  for (const [a, b] of links) {
+    const p = points[a]
+    const q = points[b]
+
+    if (p !== undefined && q !== undefined) canvas.line(p.x, p.y, q.x, q.y, COLOR.line)
+  }
+
+  model.nodes.forEach((node, i) => {
+    const q = points[i]
+    const k = node.pulseAtMs === undefined ? -1 : (t - node.pulseAtMs) / PULSE_MS
+
+    if (i === 0 || leader === undefined || q === undefined || k < 0 || k > 1) return
+
+    const x = leader.x + (q.x - leader.x) * k
+    const y = leader.y + (q.y - leader.y) * k
+
+    // Two dots wide, so a pulse on a vertical edge stands out of the line rather than sitting on its dots.
+    canvas.dot(x, y, 0xffffff)
+    canvas.dot(x + 1, y, 0xffffff)
+  })
+
+  canvas.blitInto(grid, 0, 0)
+
+  const room = Math.floor(columns / Math.max(2, Math.min(model.nodes.length, Math.floor(canvas.width / 10))))
+
+  points.forEach((point, i) => {
+    const node = model.nodes[i]
+
+    if (node === undefined) return
+
+    const cx = Math.floor(point.x / 2)
+    const cy = Math.floor(point.y / 4)
+    const heartbeat = node.isLeader ? Math.max(0, Math.sin(t / 260)) ** 6 : 0
+    const flash = node.pulseAtMs !== undefined && t - node.pulseAtMs >= 0 && t - node.pulseAtMs < PULSE_MS + 600
+    const color = flash ? 0xffffff : node.isLeader ? mix(COLOR.accent, 0xffffff, heartbeat) : nodeColor(node)
+
+    grid.set(cx, cy, node.isLeader ? '★' : '●', color)
+
+    if (room >= 5 || node.isLeader) {
+      const label = node.label.slice(0, Math.max(3, room - 1))
+
+      grid.text(Math.max(0, Math.min(columns - label.length, cx - Math.floor(label.length / 2))), Math.min(rows - 1, cy + 1), label, node.isLeader ? COLOR.accent : nodeColor(node))
+    }
+  })
+
+  return grid
+}
+
+/**
+ * Two measured series as sparklines with their labels: tool calls the console saw per 5 s, and ruflo state files that
+ * changed per refresh. The newest bar glows while the pane animates: decoration over measured bars.
+ */
+export function activityPicture(series: readonly { label: string; values: readonly number[] }[], columns: number, t: number): Grid {
+  const grid = new Grid(columns, Math.max(1, series.length))
+  const labelWidth = Math.min(18, Math.max(8, ...series.map(entry => entry.label.length + 1)))
+  const width = Math.max(4, columns - labelWidth)
+
+  series.forEach((entry, row) => {
+    grid.text(0, row, entry.label.slice(0, labelWidth - 1), COLOR.dim)
+    sparkline(grid, labelWidth, row, width, entry.values, v => ramp(0.3 + v * 0.7))
+
+    const glow = 0.5 + 0.5 * Math.sin(t / 300)
+    const last = labelWidth + width - 1
+
+    if ((entry.values[entry.values.length - 1] ?? 0) > 0) grid.set(last, row, grid.glyph(last, row), mix(COLOR.info, 0xffffff, glow * 0.6))
+  })
+
+  return grid
+}
+
+/**
+ * The running success rate of routed tasks (routing-outcomes.json), oldest left, as a braille line over a 0-100% frame.
+ * When new outcomes arrive the newest stretch draws in over 900 ms from `grewAtMs`: that motion is data arriving.
+ */
+export function curvePicture(points: readonly boolean[], columns: number, rows: number, t: number, grewAtMs = 0): Grid {
+  const grid = new Grid(columns, rows)
+  const canvas = new Braille(Math.max(1, columns - 5), rows)
+  const n = points.length
+
+  for (let r = 0; r < rows; r++) grid.text(0, r, r === 0 ? '100%' : r === rows - 1 ? '  0%' : '    ', COLOR.dim)
+
+  if (n === 0) {
+    grid.text(6, Math.floor(rows / 2), 'no routed outcomes on disk yet', COLOR.dim)
+
+    return grid
+  }
+
+  let ok = 0
+  const rates = points.map((point, i) => {
+    ok += point ? 1 : 0
+
+    return ok / (i + 1)
+  })
+  const xOf = (i: number) => (n === 1 ? canvas.width / 2 : (i / (n - 1)) * (canvas.width - 1))
+  const yOf = (rate: number) => (1 - rate) * (canvas.height - 1)
+  const drawIn = grewAtMs > 0 ? Math.max(0, Math.min(1, (t - grewAtMs) / 900)) : 1
+  const shown = Math.max(1, Math.round(n * (0.8 + 0.2 * drawIn)))
+
+  for (let x = 0; x < canvas.width; x += 4) canvas.dot(x, yOf(0.5), COLOR.line)
+  for (let i = 1; i < shown; i++) canvas.line(xOf(i - 1), yOf(rates[i - 1] as number), xOf(i), yOf(rates[i] as number), ramp(rates[i] as number))
+  if (n === 1) canvas.dot(xOf(0), yOf(rates[0] as number), ramp(rates[0] as number))
+
+  canvas.blitInto(grid, 5, 0)
+
+  return grid
+}
+
+/** The band's mark: a diamond that pulses while Claude works and rests otherwise. */
+export function markPicture(isWorking: boolean, t: number): Grid {
+  const grid = new Grid(2, 1)
+  const k = isWorking ? 0.5 + 0.5 * Math.sin(t / 220) : 1
+
+  grid.set(0, 0, '◆', isWorking ? mix(COLOR.line, COLOR.accent, k) : COLOR.accent)
+
+  return grid
+}
+
+/** The pane's title strip: a highlight sweeps across it every few seconds while the pane is focused. Decoration only. */
+export function headerPicture(title: string, columns: number, t: number): Grid {
+  const grid = new Grid(columns, 1)
+  const at = ((t / 22) % (columns + 60)) - 20
+
+  ;[...title.slice(0, columns)].forEach((ch, x) => {
+    const glow = Math.max(0, 1 - Math.abs(x - at) / 6)
+
+    grid.set(x, 0, ch, mix(x < 2 ? COLOR.accent : COLOR.dim, 0xffffff, glow * 0.8))
+  })
+
+  return grid
+}

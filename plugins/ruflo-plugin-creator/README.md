@@ -24,6 +24,7 @@ Scaffold, validate, and publish new Claude Code plugins with proper structure, M
 
 - `create-plugin` -- Generate plugin structure with skills, commands, agents, ADR-0001, smoke test, and contract sections
 - `validate-plugin` -- Validate plugin format and catch issues before publishing
+- `create-mod` -- Scaffold a Claude Code mod (function hooks) from `templates/mod/`: hybrid `hooks.json` with a classic fallback that stands down while the module runs, a host adapter over literal `$` calls, `userConfig`, engine-kit tests, tsconfig. Validated with `claude plugin validate` and `claude plugin test` (ruflo ADR-404)
 
 ## Compatibility
 
@@ -61,7 +62,7 @@ Lessons learned from sibling-ADR fixes — the scaffolder warns about these:
 
 ```bash
 bash plugins/ruflo-plugin-creator/scripts/smoke.sh
-# Expected: "10 passed, 0 failed"
+# Expected: "11 passed, 0 failed"
 ```
 
 ## Architecture Decisions
