@@ -6,7 +6,7 @@ import { plain } from './data/parse'
 import { dispatch } from './dispatch'
 import { markPicture } from './gfx/pictures'
 import type { Host } from './host'
-import { newState, PANE_ID, restore, storeKeyOf } from './state'
+import { newState, PANE_ID, restore, restoreSessions, storeKeyOf, termStoreKeyOf } from './state'
 import { BAR_KEY, barView } from './views/bar'
 import type { Kit } from './views/common'
 import { picturesOf } from './views/frames'
@@ -37,12 +37,14 @@ function hostOf($: EngineInterface, cwd: string): Host {
     storeGet: async key => $.store.get(key),
     storeSet: async (key, value) => $.store.set(key, value as never),
     invalidate: () => quietly(() => $.ui.invalidate('ui.render')),
+    focus: async (paneId, key) => $.ui.focus({ requestId: paneId, key }),
     blit: args => quietly(() => $.ui.blit(args)),
     openPane: async pane => $.ui.open(pane),
     closePane: async id => $.ui.close({ id }),
     panes: async () => $.ui.panes(),
     registerCommand: async spec => $.command.register(spec),
-    run: async (argv, timeoutMs) => $.process.run(argv, { cwd, timeoutMs }),
+    run: async (argv, timeoutMs, stdin) => $.process.run(argv, { cwd, timeoutMs, ...(stdin !== undefined && { stdin }) }),
+    spawn: (argv, input) => $.process.spawn({ argv, cwd, ...(input !== undefined && { input }) }),
     usage: async () => {
       const usage = await $.session.usage()
 
@@ -86,6 +88,15 @@ export const register: Register = (on, raw: PluginOptions) => {
 
     state.home = (await bound.home().catch(() => undefined)) ?? null
     state.configDir = (await bound.configDir().catch(() => undefined)) ?? (state.home === null ? null : `${state.home}/.claude`)
+    // A recording or a wide screen can ask for a wider dock: RUFLO_CONSOLE_COLUMNS, whole columns, 40 to 400.
+    const asked = Number(await (async () => $.env.get('RUFLO_CONSOLE_COLUMNS'))().catch(() => ''))
+
+    state.dockColumns = Number.isInteger(asked) && asked >= 40 && asked <= 400 ? asked : 0
+    // The x.ruv.io board's admin rows: only whether the token is set is kept, never its value.
+    state.xruv.hasAdminToken = await (async () => $.env.get('RUFLO_X_ADMIN_TOKEN'))().then(
+      value => typeof value === 'string' && value !== '',
+      () => null,
+    )
     await Promise.all([
       bound
         .registerCommand({ name: 'ruflo', description: 'ruflo: the cockpit (views, palette, agents, approvals) and every ruflo mod command — /ruflo help', argumentHint: '[view|palette|agent <id>|mods|swarm <sub>|help]' })
@@ -93,6 +104,7 @@ export const register: Register = (on, raw: PluginOptions) => {
       // Kept for good (ADR-406: no command is removed or renamed): `/ruflo-console` is the same command as `/ruflo`.
       bound.registerCommand({ name: 'ruflo-console', description: 'Same as /ruflo: the ruflo console', argumentHint: '[view|palette|help]' }).catch(() => undefined),
       bound.storeGet(storeKeyOf(e.cwd)).then(value => restore(state, value), () => undefined),
+      bound.storeGet(termStoreKeyOf(e.cwd)).then(value => restoreSessions(state, value), () => undefined),
       bound.rufloTools().then(counted => void (state.rufloTools = counted), () => undefined),
     ])
     control.start()
@@ -136,6 +148,7 @@ export const register: Register = (on, raw: PluginOptions) => {
     const isNarrow = columns < NARROW
     const kit: Kit = isNarrow ? { Box: table.Box, Text: table.Text, Button: table.Button, ...(table.Input !== undefined && { Input: table.Input }) } : table
 
+    if (!state.pane.isOpen) state.pane.bootAtMs = Date.now()
     state.pane.isOpen = true
     state.pane.isFocused = e.props.isFocused === true
     state.pane.columns = columns
@@ -174,7 +187,11 @@ export const register: Register = (on, raw: PluginOptions) => {
 
     bound.markFrame(e.requestId, e.props.isWorking && mark !== null)
 
-    return barView(table, state, Math.floor(Number(e.props.bodyColumns) || 80), mark, () => void bound.open(false))
+    // A click on a part opens the console on its view, with the keys, so the person can act there at once.
+    return barView(table, state, Math.floor(Number(e.props.bodyColumns) || 80), mark, () => void bound.open(false), view => {
+      bound.setView(view)
+      void bound.open(true)
+    })
   })
 
   /** The band's mark pulses during a turn: a redraw at its start, and the loop stopped at its end, whatever redraws. */

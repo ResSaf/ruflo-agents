@@ -2,7 +2,7 @@ import type { RenderElement } from 'claude-code'
 
 import { EXPECTED_IN_MARKET, RUFLO_MARKET } from '../data/snapshot'
 import { PLUGIN_NAME } from '../state'
-import { ago, col, kv, picture, rule, text, THEME, type Ctx } from './common'
+import { ago, col, kv, picture, rule, starts, text, THEME, type Ctx } from './common'
 
 const WEEK = 7 * 86_400_000
 
@@ -25,7 +25,8 @@ export function pluginsView(ctx: Ctx): RenderElement {
   if (state.configDir === null) {
     rows.push(text(ctx, 'n/a — neither CLAUDE_CONFIG_DIR nor HOME is readable to this mod, so the plugin records cannot be found', { dimColor: true }))
   } else if (market === null) {
-    rows.push(kv(ctx, 'ruflo clone', facts.markets === null ? 'n/a — no known_marketplaces.json' : 'not added — /plugin marketplace add ruvnet/ruflo'))
+    rows.push(kv(ctx, 'ruflo clone', facts.markets === null ? 'n/a — no known_marketplaces.json' : 'not added yet'))
+    rows.push(starts(ctx, 'The ruflo marketplace is not added to Claude Code, so its plugins cannot be installed or updated.', ['marketplace']))
   } else {
     const isOld = market.updatedMs !== undefined && nowMs - market.updatedMs > WEEK
 

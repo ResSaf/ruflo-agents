@@ -1,7 +1,7 @@
 import type { RenderElement } from 'claude-code'
 
 import { money, type Mission } from '../data/missions'
-import { ago, col, kv, rule, text, THEME, type Ctx } from './common'
+import { ago, col, kv, rule, startField, text, THEME, type Ctx } from './common'
 
 const STATE_COLOR: Record<string, string> = { running: THEME.warn, verifying: THEME.warn, completed: THEME.ok, failed: THEME.bad, blocked: THEME.bad, paused: THEME.info, queued: THEME.info }
 
@@ -44,7 +44,8 @@ export function missionsView(ctx: Ctx): RenderElement {
   const rows: RenderElement[] = [rule(ctx, 'Missions', observation === null ? 'no observation' : `${observation.missions.length}${observation.isTruncated ? '+' : ''} · observed ${ago(observation.observedAtMs, ctx.nowMs)}`)]
 
   if (observation === null) {
-    rows.push(text(ctx, 'n/a — no .claude-flow/missions/observation.json (ADR-406). `npx ruflo mission create --objective <text> --request-id <id>` starts one.', { dimColor: true }))
+    rows.push(text(ctx, ' No mission yet (ADR-406): a mission is an objective the swarm works toward, with a plan, a budget and acceptance.', { color: THEME.warn }))
+    rows.push(startField(ctx, 'mission', 'the objective, e.g. ship a verified OAuth login'))
 
     return col(ctx, rows, 'missions')
   }

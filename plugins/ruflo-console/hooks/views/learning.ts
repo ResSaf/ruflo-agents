@@ -1,7 +1,7 @@
 import type { RenderElement } from 'claude-code'
 
 import type { Intelligence } from '../data/cli'
-import { ago, col, count, kv, live, pct, picture, rule, sourceLine, text, THEME, type Ctx } from './common'
+import { ago, col, count, kv, live, pct, picture, rule, sourceLine, starts, text, THEME, type Ctx } from './common'
 import { stagesOf } from './frames'
 
 /**
@@ -71,6 +71,9 @@ export function learningView(ctx: Ctx): RenderElement {
     ),
   )
   rows.push(text(ctx, 'live engine: hooks_intelligence_stats in a fresh CLI process, so in-memory counters start at zero there', { dimColor: true }))
+
+  // Nothing learned yet: the loop starts from the repository itself.
+  if ((snap?.sona === null || snap?.sona === undefined) && (neural === null || neural === undefined) && snap?.isRufloProject === true) rows.push(starts(ctx, 'Nothing learned yet in this project.', ['pretrain']))
 
   return col(ctx, rows, 'learning')
 }
