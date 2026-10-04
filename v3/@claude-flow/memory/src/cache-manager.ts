@@ -109,9 +109,19 @@ export class CacheManager<T = MemoryEntry> extends EventEmitter {
     const now = Date.now();
     const entryTtl = ttl || this.config.ttl;
 
+    const entryMemory = this.estimateSize(data);
+    // A value larger than the entire budget cannot be cached. Invalidate an
+    // older value for this key, but preserve unrelated useful entries.
+    if (this.config.maxMemory && entryMemory > this.config.maxMemory) {
+      this.delete(key);
+      return;
+    }
+
     // Check if key already exists
     const existingNode = this.cache.get(key);
     if (existingNode) {
+      // Account for the old value before overwriting it.
+      this.currentMemory += entryMemory - this.estimateSize(existingNode.value.data);
       // Update existing entry
       existingNode.value.data = data;
       existingNode.value.cachedAt = now;
@@ -119,12 +129,14 @@ export class CacheManager<T = MemoryEntry> extends EventEmitter {
       existingNode.value.lastAccessedAt = now;
 
       this.moveToFront(existingNode);
+      if (this.config.maxMemory) {
+        while (this.currentMemory > this.config.maxMemory && this.cache.size > 0) {
+          this.evictLRU();
+        }
+      }
       this.stats.writes++;
       return;
     }
-
-    // Calculate memory for new entry
-    const entryMemory = this.estimateSize(data);
 
     // Evict entries if needed for memory pressure
     if (this.config.maxMemory) {
