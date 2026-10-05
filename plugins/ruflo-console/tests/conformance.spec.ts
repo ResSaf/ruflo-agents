@@ -7,6 +7,7 @@
  * over a project with a hive-mind, so the entries that need a selection exist.
  */
 import { spawnSync } from 'node:child_process'
+import { VERBS } from '../hooks/plugin-catalog'
 import { readFileSync, readdirSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
@@ -188,4 +189,13 @@ describe.skipIf(process.env.RUFLO_CONFORMANCE !== '1')('console actions vs the r
 
     expect(problems).toEqual([])
   }, 900_000)
+  it('every claude plugin verb the Plugin Catalog runs exists and takes --scope', () => {
+    for (const verb of VERBS) {
+      const run = spawnSync('claude', ['plugin', verb, '--help'], { encoding: 'utf8', timeout: 60_000 })
+      const help = `${run.stdout ?? ''}${run.stderr ?? ''}`
+
+      expect(help, `claude plugin ${verb}`).toMatch(/Usage: claude plugin/)
+      expect(help, `claude plugin ${verb}`).toContain('--scope')
+    }
+  }, 300_000)
 })

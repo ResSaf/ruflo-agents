@@ -5,17 +5,23 @@
  * standing context (claims, this session's spend). With nothing happening it says so, and when it last did.
  * Each part is a fact on disk or n/a; a part with nothing to say is left out rather than shown as zero.
  */
+import { activeMission, derive, progressOf } from '../mission-control'
 import type { RenderElement } from 'claude-code'
 
 import { alertsOf, approvalsOf } from '../data/alerts'
 import { agentLabels } from '../data/parse'
+import { secMemo } from '../secure'
 import type { State, ViewId } from '../state'
 import { ago, clip, type Kit } from './common'
 
 export const BAR_KEY = 'mark'
 
-/** One part of the band: its words, how loud, and the view a click on it opens. */
-export type BarPart = { text: string; tone: 'attention' | 'live' | 'plain'; go?: ViewId }
+/**
+ * One part of the band: its words, how loud, and the view a click on it opens. `row` is where it sits: the status row (what needs a
+ * person, the mission, who is working, a fresh event) or the standing row (the last tool call, claims, spend, findings, an update), so
+ * a long mission title in the first cannot push the second out.
+ */
+export type BarPart = { text: string; tone: 'attention' | 'live' | 'plain'; go?: ViewId; row?: 'status' | 'standing'; /** A shorter form, used when the row would otherwise cut a part. */ compact?: string }
 
 /** How long an event counts as "now" on the band. */
 const FRESH_MS = 60_000
@@ -48,6 +54,22 @@ export function money(usd: number): string {
   return usd < 100 ? `$${usd.toFixed(2)}` : `$${Math.round(usd).toLocaleString('en-US')}`
 }
 
+/** The active mission as a band part: progress and the running task, or paused; none when there is no mission, or it is done or cancelled. */
+export function missionPart(state: State): BarPart | null {
+  const mission = activeMission(state)
+
+  if (mission === null || mission.cancelled) return null
+
+  const tasks = state.snapshot?.tasks ?? []
+  const { done, total } = progressOf(mission, tasks)
+  const status = derive(mission, tasks)
+  const running = mission.tasks.find(task => status.get(task.id) === 'running')
+
+  if (total === 0 || done >= total) return null
+
+  return { text: `🎯 ${done}/${total}${mission.paused ? ' paused' : running !== undefined ? ` · ${running.id} ${clip(running.title, 28)}` : ''} (1)`, tone: running !== undefined ? 'live' : 'plain', go: 'missions' }
+}
+
 export function barParts(state: State, nowMs: number = Date.now()): BarPart[] {
   const snap = state.snapshot
   const parts: BarPart[] = []
@@ -59,6 +81,11 @@ export function barParts(state: State, nowMs: number = Date.now()): BarPart[] {
   if (approvals > 0) parts.push({ text: `${approvals} to approve (q)`, tone: 'attention', go: 'approvals' })
   if (alerts > 0) parts.push({ text: `⚠ ${alerts} alert${alerts === 1 ? '' : 's'}`, tone: 'attention', go: 'overview' })
 
+  // The active mission: how far along, and the task Claude is on (or that it is paused); a click opens Mission Control.
+  const missing = missionPart(state)
+
+  if (missing !== null) parts.push(missing)
+
   // What is happening now: agents at work, the AI terminal's runs, and the newest event while it is fresh.
   parts.push(...workingParts(state, nowMs))
 
@@ -69,23 +96,32 @@ export function barParts(state: State, nowMs: number = Date.now()): BarPart[] {
 
   if (isFresh) parts.push({ text: `${clip(latest.text, 44)} ·${since(latest.atMs, nowMs)} ago`, tone: 'plain', go: 'events' })
 
-  // Nothing moving: say so, with how many agents stand ready and when something last happened.
+  // Nothing moving: say so, with how many agents stand ready. (When something did happen, the last event is a standing part below.)
   if (!parts.some(part => part.tone === 'live') && !isFresh && snap?.swarm != null) {
     const ready = snap.agents.length
 
-    parts.push({ text: `${ready > 0 ? `idle · ${ready} agent${ready === 1 ? '' : 's'} ready` : 'swarm, no agents'}${latest !== undefined ? ` · last activity${since(latest.atMs, nowMs)} ago` : ''}`, tone: 'plain', go: 'swarm' })
+    parts.push({ text: ready > 0 ? `idle · ${ready} agent${ready === 1 ? '' : 's'} ready` : 'swarm, no agents', tone: 'plain', go: 'swarm' })
   }
 
-  // Standing context last: claims held, this session's spend.
+  // Standing context, on its own row: the last tool call or event with how long ago (it used to vanish after a minute, taking what Claude
+  // last did with it), claims held, this session's spend, what the last scan found, and a published update not yet taken.
+  if (latest !== undefined && !isFresh) parts.push({ text: `${clip(latest.text, 44)} ·${since(latest.atMs, nowMs)} ago`, tone: 'plain', go: 'events', row: 'standing', compact: `${clip(latest.text, 18)} ·${since(latest.atMs, nowMs)} ago` })
+
   const claims = snap?.claims ?? []
 
   if (claims.length > 0) {
     const stealable = claims.filter(claim => claim.isStealable).length
 
-    parts.push({ text: `${claims.length} claim${claims.length === 1 ? '' : 's'}${stealable > 0 ? ` (${stealable} stealable)` : ''}`, tone: 'plain', go: 'claims' })
+    parts.push({ text: `${claims.length} claim${claims.length === 1 ? '' : 's'}${stealable > 0 ? ` (${stealable} stealable)` : ''}`, tone: 'plain', go: 'claims', row: 'standing', compact: `${claims.length} claim${claims.length === 1 ? '' : 's'}` })
   }
 
-  if (state.usage?.costUsd !== undefined && state.usage.costUsd >= 0.01) parts.push({ text: `${money(state.usage.costUsd)} this session`, tone: 'plain', go: 'cost' })
+  if (state.usage?.costUsd !== undefined && state.usage.costUsd >= 0.01) parts.push({ text: `${money(state.usage.costUsd)} this session`, tone: 'plain', go: 'cost', row: 'standing', compact: money(state.usage.costUsd) })
+
+  const findings = secMemo(state).findings
+  const serious = findings === null ? 0 : findings.counts.critical + findings.counts.high
+
+  if (findings !== null && serious > 0) parts.push({ text: `🔒 ${serious} high or critical`, tone: findings.counts.critical > 0 ? 'attention' : 'plain', go: 'secure', row: 'standing', compact: `🔒 ${serious}` })
+  if (state.updateAvailable !== '') parts.push({ text: `⬆ ${state.updateAvailable} available`, tone: 'attention', go: 'settings', row: 'standing' })
 
   return parts
 }
@@ -96,38 +132,87 @@ export function barText(state: State, nowMs: number = Date.now()): string {
 }
 
 /**
- * The band. Each part is a link: a click opens the console on the view it is about (approvals, the swarm, the
- * terminal, the event stream, claims, cost). `onGo` opens the console there; `onOpen` opens it as it was.
+ * The band's panel: a dark ground with a border, in colours from the 256-colour cube and grey ramp. They are explicit, not theme
+ * names, so the text stays readable on the ground and a name the host does not know cannot make it refuse the whole band. (A
+ * Button cannot be coloured: its label takes the theme's, which reads on a dark theme; on a light one it is dim on the dark ground.)
+ */
+export const PANEL = { ground: '#1c1c1c', border: '#5f5faf', text: '#d0d0d0', dim: '#8a8a8a', attention: '#ffaf00', live: '#5fd75f' } as const
+
+/** Links at the end of the standing row, each opening the console on that view: where to go next, whatever is happening. */
+export const BAND_LINKS: readonly { label: string; go: ViewId }[] = [
+  { label: 'Missions', go: 'missions' },
+  { label: 'Swarm', go: 'swarm' },
+  { label: 'Security', go: 'secure' },
+  { label: 'Memory', go: 'memory' },
+  { label: 'Cost', go: 'cost' },
+  { label: 'Menu', go: 'menu' },
+]
+
+const toneColor = (tone: BarPart['tone']): string => (tone === 'attention' ? PANEL.attention : tone === 'live' ? PANEL.live : PANEL.text)
+
+/**
+ * The band, in a bordered panel with a background, two rows. The first is what is happening now (what needs a person, the mission,
+ * who is working, a fresh event). The second is what stands: the last tool call and how long ago, claims, spend, findings, an update,
+ * then links to the main views. They are separate rows so a long mission title cannot push the standing facts out. Each part is a
+ * link: a click opens the console on the view it is about. `onGo` opens the console there; `onOpen` opens it as it was.
  */
 export function barView(kit: Kit, state: State, columns: number, mark: RenderElement | null, onOpen: () => void, onGo?: (view: ViewId) => void): RenderElement {
   // A stale marketplace clone is one of the alerts, so it already turns the band's attention part on.
   const parts = barParts(state)
-  let room = Math.max(8, columns - (state.pane.isOpen ? 4 : 22))
-  const children: RenderElement[] = [mark !== null ? mark : kit.Text({ color: 'claude', children: '◆ ' }), kit.Text({ dimColor: true, children: 'ruflo' })]
+  const inner = Math.max(16, columns - 4)
+  const sep = (): RenderElement => kit.Text({ color: PANEL.dim, children: ' · ' })
 
-  room -= 5
-
-  for (const [i, part] of parts.entries()) {
-    const words = part.text
-
-    if (room <= 6) break
-    children.push(kit.Text({ dimColor: true, children: ' · ' }))
-
+  // One part: a button to its view where it has one, else words in its tone's colour.
+  const partElement = (part: BarPart, key: string, room: number): RenderElement => {
     const go = part.go
+    const label = clip(part.text, room - 3)
 
-    // Attention and live parts keep their colour; a part with somewhere to go is a button to it.
-    if (go !== undefined && onGo !== undefined && part.tone === 'plain') {
-      children.push(kit.Button({ key: `band-${i}`, label: clip(words, room - 3), plain: true, dimColor: true, onPress: () => onGo(go) }))
-    } else if (go !== undefined && onGo !== undefined) {
-      children.push(kit.Button({ key: `band-${i}`, label: clip(words, room - 3), plain: true, onPress: () => onGo(go) }))
-    } else {
-      children.push(kit.Text({ wrap: 'truncate-end', ...(part.tone === 'attention' ? { color: 'warning' } : part.tone === 'live' ? { color: 'success' } : { dimColor: true }), children: clip(words, room - 3) }))
+    if (go !== undefined && onGo !== undefined) return kit.Button({ key, label, plain: true, ...(part.tone === 'plain' && { dimColor: true }), onPress: () => onGo(go) })
+
+    return kit.Text({ wrap: 'truncate-end', color: toneColor(part.tone), children: label })
+  }
+  // A row whose parts do not all fit in full uses their compact forms (a part with none keeps its words), so a part is shortened by
+  // its own choice of words, not cut in the middle of one.
+  const fill = (lead: RenderElement[], room: number, shown: BarPart[], from: number): { children: RenderElement[]; room: number } => {
+    const children = [...lead]
+    const tight = shown.reduce((sum, part) => sum + part.text.length + 3, 0) > room
+    const forms = shown.map(part => (tight && part.compact !== undefined ? { ...part, text: part.compact } : part))
+
+    for (const [i, part] of forms.entries()) {
+      if (room <= 6) break
+      children.push(sep(), partElement(part, `band-${from + i}`, room))
+      room -= part.text.length + 3
     }
 
-    room -= words.length + 3
+    return { children, room }
   }
 
-  if (!state.pane.isOpen) children.push(kit.Text({ children: '  ' }), kit.Button({ key: 'open-console', label: 'open console', plain: true, onPress: onOpen }))
+  const status = parts.filter(part => part.row !== 'standing')
+  const standing = parts.filter(part => part.row === 'standing')
+  const first = fill([mark !== null ? mark : kit.Text({ color: PANEL.attention, children: '◆ ' }), kit.Text({ bold: true, color: PANEL.text, children: 'ruflo' })], inner - 5 - (state.pane.isOpen ? 0 : 18), status, 0)
 
-  return kit.Box({ flexDirection: 'row', children })
+  if (!state.pane.isOpen) first.children.push(kit.Text({ children: '  ' }), kit.Button({ key: 'open-console', label: 'open console', plain: true, onPress: onOpen }))
+
+  // The second row: the standing facts, then the links with what room is left (a link that does not fit is dropped, not cut).
+  const second = fill([kit.Text({ color: PANEL.dim, children: '↳ ' })], inner - 2, standing, status.length)
+  let room = second.room
+
+  for (const [i, link] of BAND_LINKS.entries()) {
+    if (room < link.label.length + 5) break
+    // A bar sets the links off from the facts before them; between links, a space.
+    if (i > 0) second.children.push(kit.Text({ children: ' ' }))
+    else if (standing.length > 0) second.children.push(kit.Text({ color: PANEL.dim, children: ' │ ' }))
+
+    second.children.push(onGo !== undefined ? kit.Button({ key: `band-link-${link.go}`, label: link.label, plain: true, dimColor: true, onPress: () => onGo(link.go) }) : kit.Text({ color: PANEL.dim, children: link.label }))
+    room -= link.label.length + (i === 0 ? 3 : 1)
+  }
+
+  return kit.Box({
+    flexDirection: 'column',
+    borderStyle: 'round',
+    borderColor: PANEL.border,
+    backgroundColor: PANEL.ground,
+    paddingX: 1,
+    children: [kit.Box({ flexDirection: 'row', children: first.children }), kit.Box({ flexDirection: 'row', children: second.children })],
+  })
 }

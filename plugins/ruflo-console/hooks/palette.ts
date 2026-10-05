@@ -10,6 +10,10 @@ import { hiveBroadcast, hivePropose, hiveSpawn, hiveVote } from './hive'
 import { claimTask, handoffClaim, releaseClaim, stealClaim, type ActionSpec } from './actions'
 import { MEM_KEYWORDS, MEM_LAB, memSpecOf, memWhy } from './memory-lab'
 import { EVOLVE, evolveSpec, evolveWhy } from './evolve'
+import { askPalette } from './ask-palette'
+import { missionPalette } from './mission-palette'
+import { catalogPalette } from './plugin-catalog'
+import { settingsPalette } from './settings-palette'
 import { devPalette } from './devtools'
 import { LAB, labSpec, labWhy } from './mh-lab'
 import { PERF } from './perf'
@@ -61,7 +65,7 @@ export function fuzzy(query: string, label: string): number | null {
   return whole < 0 ? score : score + 5 + (whole === 0 || text[whole - 1] === ' ' ? 3 : 0)
 }
 
-const TEXT_KEYWORDS: readonly string[] = ['route', 'store', 'search', 'propose', 'broadcast', 'task', 'mission', 'cost-budget', 'x-join', 'x-read', 'x-publish', 'x-create', 'x-grant', 'x-hub', 'x-admit', ...MEM_KEYWORDS, ...SECURE_KEYWORDS, 'skills-find', 'auto-wf-new', 'auto-wf-validate', 'auto-ap-history', 'auto-ses-save', 'auto-cfg-get', 'auto-cfg-set', 'auto-task-new', 'nn-train', 'nn-route', 'nn-explain', 'nn-predict']
+const TEXT_KEYWORDS: readonly string[] = ['route', 'store', 'search', 'propose', 'broadcast', 'task', 'mission', 'cost-budget', 'x-join', 'x-read', 'x-publish', 'x-create', 'x-grant', 'x-hub', 'x-admit', 'catalog-install', 'catalog-uninstall', 'catalog-enable', 'catalog-disable', 'catalog-update', 'settings-set', 'settings-core', 'ask', 'ask-aside', 'mission-goal', 'mission-aside', 'mission-guide', 'mission-auto', ...MEM_KEYWORDS, ...SECURE_KEYWORDS, 'skills-find', 'auto-wf-new', 'auto-wf-validate', 'auto-ap-history', 'auto-ses-save', 'auto-cfg-get', 'auto-cfg-set', 'auto-task-new', 'nn-train', 'nn-pattern-search', 'nn-pattern-store', 'nn-route', 'nn-explain', 'nn-predict']
 
 /** Every entry for the state as it is, before filtering. */
 export function paletteEntries(state: State, nowMs: number): PaletteEntry[] {
@@ -98,7 +102,7 @@ export function paletteEntries(state: State, nowMs: number): PaletteEntry[] {
   for (const type of AGENT_TYPES) add(`spawn-${type}`, 'swarm', `spawn ${/^[aeiou]/.test(type) ? 'an' : 'a'} ${type} agent`, { kind: 'spec', spec: spawnAgent(type, nowMs), why: 'unknown agent type' })
 
   // One-click starts, also reachable as `/ruflo run <id>`: everything an empty section offers.
-  for (const id of START_IDS) add(id, 'start', `${START_LABEL[id]}`, { kind: 'spec', spec: startSpec(id, nowMs), why: 'that start cannot run here' })
+  for (const id of START_IDS) add(id, 'start', `${START_LABEL[id]}`, { kind: 'spec', spec: startSpec(id, nowMs, '', present => { state.nostrKeyVerifiedAtMs = present ? Date.now() : null }), why: 'that start cannot run here' })
   add('task', 'start', 'task <text>: put a task on the board', { kind: 'text', keyword: 'task', make: text => startSpec('task', nowMs, text) })
   add('mission', 'start', 'mission <objective>: create an ADR-406 mission', { kind: 'text', keyword: 'mission', make: text => startSpec('mission', nowMs, text) })
 
@@ -171,6 +175,10 @@ export function paletteEntries(state: State, nowMs: number): PaletteEntry[] {
 
   // Dev Tools: local reads run at once, the rest ask first; an entry with a field takes its text (see devtools.ts).
   out.push(...devPalette(state))
+  out.push(...catalogPalette(state))
+  out.push(...missionPalette(state))
+  out.push(...askPalette(state))
+  out.push(...settingsPalette(state))
 
   for (const worker of WORKERS) add(`worker-${worker}`, 'workers', `dispatch the ${worker} background worker`, { kind: 'spec', spec: dispatchWorker(worker), why: 'unknown worker' })
 
@@ -203,9 +211,13 @@ export function filterPalette(entries: readonly PaletteEntry[], query: string, c
 
       return score === null ? [] : [{ entry, score }]
     })
-    .sort((a, b) => b.score - a.score)
+    // What can run comes first, so the best match, which Enter runs, is something that runs; each half keeps its own order.
+    .sort((a, b) => Number(isUnavailable(a.entry)) - Number(isUnavailable(b.entry)) || b.score - a.score)
     .map(match => match.entry)
 }
+
+/** An entry that cannot run now (its spec is null: a mod that is not seated, a missing selection). */
+export const isUnavailable = (entry: PaletteEntry): boolean => entry.run.kind === 'spec' && entry.run.spec === null
 
 /** The argument a text entry takes from the query: everything after its keyword. */
 export const textOfQuery = (query: string, keyword: string): string => query.trim().slice(keyword.length).trim()

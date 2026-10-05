@@ -1,5 +1,7 @@
 import type { EngineInterface, On } from 'claude-code'
+import type { GuidanceHooks } from './guidance'
 
+import { versionText } from './probe'
 import { HANDSHAKE_MARKER, ownedEvents } from './ownership'
 import type { ModOptions } from './options'
 import { redraw, report, under, type ModState } from './state'
@@ -43,19 +45,27 @@ function hasClassicStatusLine(settings: unknown): boolean {
  * hooks through the process environment; register `/ruflo-mods`. Any failure
  * leaves the mod owning nothing, so every classic hook keeps running.
  */
-export function registerSession(on: On, state: ModState, options: ModOptions) {
+export function registerSession(on: On, state: ModState, options: ModOptions, guidance?: GuidanceHooks) {
   on('session.start', async ($, e, next) => {
     state.root = await $.session.root()
+    // A user-scoped install loads in every project. Existing Ruflo state is
+    // the opt-in boundary: a missing, unreadable or non-directory path must
+    // neither own project events nor be created by the display heartbeat.
+    const project = await $.fs.stat(under(state, '.claude-flow')).then(stat => stat.kind === 'dir').catch(() => false)
     const settings = await $.settings.read()
-    state.owned = new Set(ownedEvents(settings, await helperHonours($)))
+    state.owned = new Set(project ? ownedEvents(settings, await helperHonours($)) : [])
     await $.env.set('RUFLO_MODS_OWNS', state.owned.size ? [...state.owned].join(',') : undefined)
     state.statusLine = options.statusLine && !hasClassicStatusLine(settings)
+    if (state.probe.enabled) state.probe.version = versionText(await $.session.version().catch(() => undefined))
+    guidance?.start()
     redraw(state)
     await $.command
       .register({ name: 'ruflo-mods', description: 'Same as /ruflo mods: what this session routed, recorded and tightened' })
       .catch(() => undefined)
-    const heartbeat = { startedAt: new Date().toISOString(), owned: [...state.owned], statusLine: state.statusLine }
-    await $.fs.write(under(state, HEARTBEAT_PATH), `${JSON.stringify(heartbeat, null, 2)}\n`).catch(() => undefined)
+    if (project) {
+      const heartbeat = { startedAt: new Date().toISOString(), owned: [...state.owned], statusLine: state.statusLine, ...(state.probe.enabled ? { engine: state.probe.version ?? null, events: [...state.probe.registered].sort() } : {}) }
+      await $.fs.write(under(state, HEARTBEAT_PATH), `${JSON.stringify(heartbeat, null, 2)}\n`).catch(() => undefined)
+    }
     return next(e)
   }).catch(async ($, e, next) => {
     state.owned = new Set()

@@ -3,7 +3,7 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 import { MEM_OUT } from './fixtures/memory'
 import { RUFLO_FILES } from './fixtures/ruflo-run'
 import { drawn, memoryWorld } from './fixtures/views'
-import { cliAnswer, command, elementsOf, keyOf, paneAt, PLUGIN, SESSION, textOf, worldOf } from './fixtures/world'
+import { inputKeys, cliAnswer, command, elementsOf, keyOf, paneAt, PLUGIN, SESSION, textOf, worldOf } from './fixtures/world'
 
 describe('labs and starts', () => {
   test('cost: a preset asks first, names the exact change, and sends one fixed argv with JSON stdin on yes', { options: { boot: false } }, async ($, on) => {
@@ -88,15 +88,70 @@ describe('labs and starts', () => {
 
     const { text, tree } = await drawn($, 'memory')
 
-    for (const section of ['AGENTDB', 'NAMESPACES', 'RECENCY', 'BROWSE', 'SEARCH', 'ENTRY', 'RESULT', 'LAB · MEMORY', 'LAB · AGENTDB', 'LAB · EMBEDDINGS', 'LAB · MAINTAIN']) expect(text).toContain(`▓▒░ ${section} ░▒▓`)
+    for (const section of ['AGENTDB', 'NAMESPACES', 'RECENCY', 'BROWSE', 'SEARCH', 'ENTRY']) expect(text).toContain(`▓▒░ ${section} ░▒▓`)
+    // The lab groups fold away, and nothing is drawn for a result until an action is raised.
+    for (const section of ['LAB · MEMORY', 'LAB · AGENTDB', 'LAB · EMBEDDINGS', 'LAB · MAINTAIN']) expect(text).toContain(`▓▒░ ▾ ${section} ░▒▓`)
+    expect(text).not.toContain('▓▒░ RESULT ░▒▓')
     expect(text).toContain('1/2 of the newest listed carry a vector')
     expect(text).toContain('2 more rows in .swarm/agentdb-memory.db')
     expect(text).toMatch(/ ◆ beta \.+/)
     expect(text).toMatch(/del \n DELETE \.+/)
-    expect(elementsOf(tree, 'Input').map(keyOf)).toEqual(['mem-query', 'mem-namespace', 'mem-key', 'mem-value', 'mem-text'])
+    expect(inputKeys(tree)).toEqual(['mem-query', 'mem-namespace', 'mem-key', 'mem-value', 'mem-text'])
     expect(elementsOf(tree, 'Button').map(keyOf)).toEqual(expect.arrayContaining(['mem-ns-0', 'mem-open-0', 'mem-del-0', 'mem-lab-mem-stats', 'mem-lab-mem-cleanup', 'mem-lab-mem-rabitq-build']))
     // Opening it runs only its two local probes.
     expect(world.runs.filter(argv => /memory (retrieve|search|store|delete|export)|mcp exec -t (memory_|agentdb_|embeddings_)/.test(argv.join(' ')))).toEqual([])
+  })
+
+  test('memory lab: a confirm and a result open under the area that was clicked, not at the top or in one far block', { options: { boot: false } }, async ($, on) => {
+    const world = memoryWorld(on)
+
+    mock.clock(on)
+    await $.session.start(SESSION)
+    await $.command.run(command('memory'))
+
+    const pane = await $.ui.mount({ ...paneAt(110), surface: 'terminal' as const, plugin: PLUGIN })
+    const at = (text: string, needle: string) => text.indexOf(needle)
+
+    await pane.drawn()
+
+    // Browse: ▸ view answers right under the browse list, before Search.
+    await pane.press({ key: 'mem-open-0' })
+
+    const viewed = textOf(await pane.drawn())
+
+    expect(at(viewed, '▓▒░ RESULT ░▒▓')).toBeGreaterThan(at(viewed, '▓▒░ BROWSE ░▒▓'))
+    expect(at(viewed, '▓▒░ RESULT ░▒▓')).toBeLessThan(at(viewed, '▓▒░ SEARCH ░▒▓'))
+
+    // Browse: ▸ delete asks right there too, and the page's top holds no confirm.
+    await pane.press({ key: 'mem-del-0' })
+
+    const asked = textOf(await pane.drawn())
+
+    expect(at(asked, 'Confirm:')).toBeGreaterThan(at(asked, '▓▒░ BROWSE ░▒▓'))
+    expect(at(asked, 'Confirm:')).toBeLessThan(at(asked, '▓▒░ SEARCH ░▒▓'))
+    await pane.press({ key: 'cancel' })
+
+    // A lab row answers inside its own group: the Memory group, before the AgentDB group.
+    await pane.press({ key: 'mem-lab-mem-stats' })
+
+    const stats = textOf(await pane.drawn())
+
+    expect(at(stats, '▓▒░ RESULT ░▒▓')).toBeGreaterThan(at(stats, '▓▒░ ▾ LAB · MEMORY ░▒▓'))
+    expect(at(stats, '▓▒░ RESULT ░▒▓')).toBeLessThan(at(stats, '▓▒░ ▾ LAB · AGENTDB ░▒▓'))
+    expect(stats.split('▓▒░ RESULT ░▒▓').length - 1).toBe(1)
+
+    // A write from the entry fields asks under the entry fields, before the lab groups.
+    await pane.input({ key: 'mem-namespace', text: 'notes', kind: 'change' })
+    await pane.input({ key: 'mem-key', text: 'alpha', kind: 'change' })
+    await pane.input({ key: 'mem-value', text: 'a value', kind: 'change' })
+    await pane.press({ key: 'mem-do-store' })
+
+    const stored = textOf(await pane.drawn())
+
+    expect(at(stored, 'Confirm:')).toBeGreaterThan(at(stored, '▓▒░ ENTRY ░▒▓'))
+    expect(at(stored, 'Confirm:')).toBeLessThan(at(stored, '▓▒░ ▾ LAB · MEMORY ░▒▓'))
+    expect(world.runs.filter(argv => argv.includes('store'))).toEqual([])
+    await pane.unmount()
   })
 
   test('memory lab: view reads at once with one fixed argv; delete and store ask with their argv, then run it on yes', { options: { boot: false } }, async ($, on) => {

@@ -2,7 +2,8 @@ import type { RenderElement } from 'claude-code'
 
 import { EPOCHS, PATTERNS, sparkline } from '../data/automate'
 import { field, resultRows, strip } from './automate'
-import { ago, col, count, kv, row, rule, text, THEME, type Ctx } from './common'
+import { spinAt } from '../spinner'
+import { ago, col, count, kv, row, section, text, THEME, type Ctx } from './common'
 
 const BAR = 24
 
@@ -10,7 +11,7 @@ const BAR = 24
 function intelligenceRows(ctx: Ctx): RenderElement[] {
   const { state, nowMs } = ctx
   const neural = state.snapshot?.neural ?? null
-  const rows: RenderElement[] = [rule(ctx, 'Intelligence', neural === null ? 'no .claude-flow/neural/stats.json' : 'neural/stats.json')]
+  const rows: RenderElement[] = []
 
   rows.push(kv(ctx, 'trajectories', count(neural?.trajectories)))
   rows.push(kv(ctx, 'patterns learned', count(neural?.patterns)))
@@ -32,14 +33,14 @@ function trainingRows(ctx: Ctx): RenderElement[] {
   const last = trains[trains.length - 1]
   const losses = trains.flatMap(run => (run.loss === undefined ? [] : [run.loss]))
   const running = state.lab.running?.id.startsWith('nn-train') === true ? state.lab.running : null
-  const rows: RenderElement[] = [rule(ctx, 'Training', `${trains.length} run${trains.length === 1 ? '' : 's'} this session`)]
+  const rows: RenderElement[] = []
 
   if (running !== null) {
     const at = Math.floor((nowMs - running.startedAtMs) / 250) % (BAR * 2)
     const head = at < BAR ? at : BAR * 2 - at - 1
     const bar = Array.from({ length: BAR }, (_, i) => (Math.abs(i - head) <= 2 ? '█' : '░')).join('')
 
-    rows.push(text(ctx, ` ▸ ${running.label} [${bar}] ${Math.round((nowMs - running.startedAtMs) / 1000)}s`, { bold: true, color: THEME.warn }))
+    rows.push(text(ctx, ` ${spinAt(nowMs)} ${running.label} [${bar}] ${Math.round((nowMs - running.startedAtMs) / 1000)}s`, { bold: true, color: THEME.warn }))
   }
 
   rows.push(
@@ -71,12 +72,40 @@ function trainingRows(ctx: Ctx): RenderElement[] {
   return rows
 }
 
+/** Bootstrap, consolidate, and the pattern store: the learning loop's own actions. */
+function selfLearnRows(ctx: Ctx): RenderElement[] {
+  return [
+    strip(ctx, 'nn-pretrain', [{ id: 'nn-pretrain-shallow', label: 'pretrain: shallow', cost: 'local' }, { id: 'nn-pretrain-medium', label: 'medium', cost: 'local' }, { id: 'nn-pretrain-deep', label: 'deep', cost: 'local' }]),
+    strip(ctx, 'nn-consolidate', [{ id: 'nn-consolidate', label: 'consolidate retained memories', cost: 'local' }]),
+    field(ctx, 'nn-pattern-search', 'pattern search', 'what the stored patterns should be searched for, in words', 'search'),
+    field(ctx, 'nn-pattern-store', 'teach a pattern', 'a pattern to remember: always run the auth tests after touching login', 'store'),
+  ]
+}
+
 function routerRows(ctx: Ctx): RenderElement[] {
   return [
-    rule(ctx, 'Router', 'which agent for this task? · $0, local'),
     field(ctx, 'nn-route', 'route', 'a task: fix the login bug in auth.ts', 'route'),
     field(ctx, 'nn-explain', 'explain', 'a task, to see why the router picks its agent', 'explain'),
     field(ctx, 'nn-predict', 'predict', 'text for the trained models’ top predictions', 'predict'),
+  ]
+}
+
+/**
+ * Everything the Learning Lab does, as folded sections: what was learned and the router open; training open only while a run is
+ * out (so its bar is never hidden) and folded otherwise; the self-learning actions folded. Also drawn, folded, on the Learning page.
+ */
+export const neuralActionRows = (ctx: Ctx, nested = false): RenderElement[] => {
+  const { state } = ctx
+  const neural = state.snapshot?.neural ?? null
+  const trains = state.auto.trains
+  const isTraining = state.lab.running?.id.startsWith('nn-train') === true
+
+  // Nested under the Learning page's own fold, the sections start open, so there is one fold to open, not two.
+  return [
+    ...section(ctx, 'nn-intel', 'Intelligence', neural === null ? 'no .claude-flow/neural/stats.json' : 'neural/stats.json', intelligenceRows(ctx), true),
+    ...section(ctx, 'nn-train', 'Training', `${trains.length} run${trains.length === 1 ? '' : 's'} this session${isTraining ? ' · running' : ''}`, trainingRows(ctx), nested || isTraining),
+    ...section(ctx, 'nn-self', 'Self-learning', 'bootstrap, consolidate and teach the ReasoningBank · local, no model calls', selfLearnRows(ctx), nested),
+    ...section(ctx, 'nn-router', 'Router', 'which agent for this task? · $0, local', routerRows(ctx), true),
   ]
 }
 
@@ -89,11 +118,12 @@ export function neuralView(ctx: Ctx): RenderElement {
     ctx,
     [
       ...resultRows(ctx, ['nn-']),
-      ...intelligenceRows(ctx),
-      ...trainingRows(ctx),
-      ...routerRows(ctx),
+      ...neuralActionRows(ctx),
       text(ctx, ' $0 read, runs at once · cpu local compute that writes .claude-flow/neural, asks first · no entry here calls a paid model', { dimColor: true }),
     ],
     'neural',
   )
 }
+
+/** This view's result block alone: the pane asks for it to place under the row that was clicked. */
+export const neuralResult = (ctx: Ctx): RenderElement[] => resultRows(ctx, ['nn-'])

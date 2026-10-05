@@ -7,6 +7,7 @@ import type { ConsoleEvent } from './data/events'
 import type { ReadCache } from './data/files'
 import { emptyEvolve, type EvolveState } from './data/evolve'
 import { emptySkills, type SkillsState } from './data/skills'
+import type { UpdatesMode } from './updates'
 import { emptyMemoryLab, type MemoryLabState } from './memory-lab'
 import { emptyVector, type VectorState } from './data/vector'
 import type { Snapshot } from './data/snapshot'
@@ -15,7 +16,12 @@ import type { RufloRoute, RufloSnapshot } from '../types'
 export const PLUGIN_NAME = 'ruflo-console'
 export const PANE_ID = 'ruflo-console'
 
-export type ViewId = 'menu' | 'overview' | 'swarm' | 'hive' | 'claims' | 'federation' | 'plugins' | 'learning' | 'metaharness' | 'memory' | 'cost' | 'timeline' | 'approvals' | 'events' | 'missions' | 'xruv' | 'terminal' | 'skills' | 'agent' | 'secure' | 'perf' | 'automate' | 'neural' | 'vector' | 'evolve' | 'devtools'
+/** How the main nav spells its tabs: auto (names when the pane is wide), icons only, icon and a brief title, icon and the full title. */
+export type NavStyle = 'auto' | 'icons' | 'brief' | 'full'
+export const NAV_STYLES: readonly NavStyle[] = ['auto', 'icons', 'brief', 'full']
+export const NAV_KEY = 'nav-style'
+
+export type ViewId = 'menu' | 'overview' | 'swarm' | 'hive' | 'claims' | 'federation' | 'plugins' | 'learning' | 'metaharness' | 'memory' | 'cost' | 'timeline' | 'approvals' | 'events' | 'room' | 'missions' | 'xruv' | 'terminal' | 'skills' | 'agent' | 'secure' | 'perf' | 'automate' | 'neural' | 'vector' | 'evolve' | 'devtools' | 'sandbox' | 'market' | 'settings'
 
 /**
  * The views in tab order, each with its hotkey and the inline height it asks for. Digits are the first nine; the three
@@ -27,37 +33,37 @@ export type ViewId = 'menu' | 'overview' | 'swarm' | 'hive' | 'claims' | 'federa
  * current tab adds its label, and `blurb` is the one line under the bar that says what the view is for.
  */
 export const VIEWS: readonly { id: ViewId; key: string; label: string; short: string; icon: string; blurb: string; rows: number }[] = [
+  // Every view has a hotkey (one digit or lowercase letter is all a Button takes): digits 0-9 are the first ten, letters follow. A view's own
+  // keys (claims c l o s, the terminal l c v u, the footer p x r h) win while that view is open; the tab and the menu still reach it.
   { id: 'menu', key: '0', label: 'Main Menu', short: 'Mnu', icon: '📟', blurb: 'the board: every area by its key, the line status, and a prompt that takes a key or a name', rows: 32 },
-  { id: 'overview', key: '1', label: 'Overview', short: 'Ovr', icon: '🏠', blurb: 'what ruflo is doing here: subsystems, mods, health alerts and live activity', rows: 26 },
-  { id: 'swarm', key: '2', label: 'Swarm', short: 'Swm', icon: '🐝', blurb: 'the swarm as ruflo wrote it: topology, agents at work, and the hive-mind votes', rows: 30 },
-  // No hotkey: every digit and letter is taken. It is reached from the tab, the menu, the palette or /ruflo hive.
-  { id: 'hive', key: '', label: 'Hive-Mind', short: 'Hiv', icon: '👑', blurb: 'the queen, her workers and their votes: quorum, fault tolerance, proposals and broadcasts', rows: 40 },
-  { id: 'claims', key: '3', label: 'Claims', short: 'Clm', icon: '📌', blurb: 'who holds which task: claim, release, hand off or steal, each after a y/n confirm', rows: 30 },
-  { id: 'federation', key: '4', label: 'Federation', short: 'Fed', icon: '🌐', blurb: 'this node, its peers, keys and channels, placed by how far each is trusted', rows: 26 },
-  { id: 'plugins', key: '5', label: 'Plugins', short: 'Plg', icon: '🧩', blurb: 'ruflo plugins: installed, enabled, in the marketplace clone, and loaded as mods', rows: 30 },
-  { id: 'learning', key: '6', label: 'Learning', short: 'Lrn', icon: '🧠', blurb: 'router picks and outcomes, and the RETRIEVE → JUDGE → DISTILL → CONSOLIDATE pipeline', rows: 30 },
-  { id: 'metaharness', key: '7', label: 'MetaHarness', short: 'MH', icon: '🔬', blurb: 'harness readiness, the flywheel, the audit trend, and a lab that runs every MetaHarness verb', rows: 40 },
-  { id: 'memory', key: '8', label: 'Memory', short: 'Mem', icon: '💾', blurb: 'the Memory Lab: browse, search, store and delete entries; AgentDB, embeddings and upkeep, each a button', rows: 60 },
-  { id: 'cost', key: '9', label: 'Cost', short: 'Cst', icon: '💰', blurb: 'set a budget, see where spend is reported, and project its burn', rows: 40 },
+  { id: 'missions', key: '1', label: 'Missions', short: 'Msn', icon: '🎯', blurb: 'Mission Control: a goal becomes a SPARC plan, a mission and tasks that Claude carries out, with guidance, controls and evidence', rows: 26 },
+  { id: 'overview', key: '2', label: 'Overview', short: 'Ovr', icon: '🏠', blurb: 'what ruflo is doing here: subsystems, mods, health alerts and live activity', rows: 26 },
+  { id: 'swarm', key: '3', label: 'Swarm', short: 'Swm', icon: '🐝', blurb: 'the swarm as ruflo wrote it: topology, agents at work, and the hive-mind votes', rows: 30 },
+  { id: 'hive', key: 'b', label: 'Hive-Mind', short: 'Hiv', icon: '👑', blurb: 'the queen, her workers and their votes: quorum, fault tolerance, proposals and broadcasts', rows: 40 },
+  { id: 'claims', key: '4', label: 'Claims', short: 'Clm', icon: '📌', blurb: 'who holds which task: claim, release, hand off or steal, each after a y/n confirm', rows: 30 },
+  { id: 'federation', key: '5', label: 'Federation', short: 'Fed', icon: '🌐', blurb: 'this node, its peers, keys and channels, placed by how far each is trusted', rows: 26 },
+  { id: 'plugins', key: '6', label: 'Plugins', short: 'Plg', icon: '🧩', blurb: 'ruflo plugins: installed, enabled, in the marketplace clone, and loaded as mods', rows: 30 },
+  { id: 'learning', key: '7', label: 'Learning', short: 'Lrn', icon: '🧠', blurb: 'router picks and outcomes, and the RETRIEVE → JUDGE → DISTILL → CONSOLIDATE pipeline', rows: 30 },
+  { id: 'metaharness', key: '8', label: 'MetaHarness', short: 'MH', icon: '🔬', blurb: 'harness readiness, the flywheel, the audit trend, and a lab that runs every MetaHarness verb', rows: 40 },
+  { id: 'memory', key: '9', label: 'Memory', short: 'Mem', icon: '💾', blurb: 'the Memory Lab: browse, search, store and delete entries; AgentDB, embeddings and upkeep, each a button', rows: 60 },
+  { id: 'cost', key: 'c', label: 'Cost', short: 'Cst', icon: '💰', blurb: 'set a budget, see spend across Claude Code and Codex, and how to cut it', rows: 40 },
   { id: 'timeline', key: 'g', label: 'Timeline', short: 'Gnt', icon: '🕒', blurb: 'each agent busy or idle over the last minutes, beside Claude Code tool calls', rows: 24 },
   { id: 'approvals', key: 'q', label: 'Approvals', short: 'Apv', icon: '✅', blurb: 'decisions waiting for a person: votes, stealable claims, refused mods, budget', rows: 24 },
   { id: 'events', key: 'e', label: 'Events', short: 'Evt', icon: '📡', blurb: 'every swarm, claim, memory and mod event as it happens (f filters them)', rows: 26 },
-  { id: 'missions', key: 'm', label: 'Missions', short: 'Msn', icon: '🎯', blurb: 'ADR-406 missions: the plan, task dependencies, acceptance and budget (observe only)', rows: 26 },
+  { id: 'room', key: '', label: 'Room', short: 'Room', icon: '💬', blurb: 'what the people and the agents here are saying and doing, live, and the one thing waiting for a yes', rows: 30 },
   { id: 'xruv', key: 'w', label: 'x.ruv.io', short: 'XRV', icon: '🛸', blurb: 'the open agent federation: what it offers, how to join, its channels and who is on', rows: 50 },
-  { id: 'terminal', key: 'i', label: 'Terminal', short: 'Trm', icon: '💻', blurb: 'an AI terminal: codex, claude or both, each a session that remembers the conversation, streamed live', rows: 32 },
-  // No hotkey: every digit and letter is taken. The tab, the menu prompt and /ruflo skills reach it by name.
-{ id: 'skills', key: '', label: 'Skills', short: 'Skl', icon: '🧰', blurb: 'agent skills (npx skills, skills.sh): installed, search, use without installing, preview, add to chosen agents, update, create', rows: 60 },
-  // No hotkeys either: reached by the tab, the menu prompt (secure, perf) or /ruflo secure.
-  { id: 'secure', key: '', label: 'Security & Doctor', short: 'Sec', icon: '🔒',blurb: 'security scans, a paste field that checks text for injection and PII, policy, and every doctor check', rows: 40 },
-  { id: 'perf', key: '', label: 'Performance', short: 'Prf', icon: '📈', blurb: 'metrics, profile, benchmarks, bottlenecks and a latency sparkline from each run', rows: 30 },
-  { id: 'automate', key: '', label: 'Automation', short: 'Aut', icon: '🤖', blurb: 'workflows, the twelve background workers and their daemon, autopilot, sessions, config and a task kanban', rows: 44 },
-  { id: 'neural', key: '', label: 'Learning Lab', short: 'Lab', icon: '🧪', blurb: 'train neural patterns and watch the loss, ask the router which agent fits a task, and why', rows: 36 },
-  // No hotkey either: reached from the tab, the menu prompt (vector) or /ruflo vector.
-  { id: 'vector', key: '', label: 'Vector Lab', short: 'Vec', icon: '🧲', blurb: 'ruvector: the shared brain, RVF stores, rvlite queries, decompile, workers, edge, hooks intel and your pi identity', rows: 44 },
-  // No hotkey either: the tab, the menu prompt, the palette and /ruflo evolve reach it by name.
-  { id: 'evolve', key: '', label: 'Self-Evolution', short: 'Evo', icon: '🧬', blurb: 'the governed loop: flywheel receipts, ledger, lineage, the policy gate, the witness; Autogenous and rGi', rows: 44 },
-  // Keyless too. The menu prompt, the tab and /ruflo devtools reach it by name.
-  { id: 'devtools', key: '', label: 'Dev Tools', short: 'Dev', icon: '🔧', blurb: 'the integration surface: GitHub, diff analysis, agenticow, WASM, browser, terminal, providers, maintenance', rows: 40 },
+  { id: 'terminal', key: 'i', label: 'Terminal', short: 'Trm', icon: '💻', blurb: 'an AI terminal: claude -p, codex or both, each a session that remembers the conversation, streamed live', rows: 120 },
+  { id: 'skills', key: 'z', label: 'Skills', short: 'Skl', icon: '🧰', blurb: 'agent skills (npx skills, skills.sh): installed, search, use without installing, preview, add to chosen agents, update, create', rows: 60 },
+  { id: 'secure', key: 'u', label: 'Security & Doctor', short: 'Sec', icon: '🔒',blurb: 'security scans, a paste field where AIDefence checks text for injection and PII, policy, sentries that scan on a schedule or on change, and every doctor check', rows: 40 },
+  { id: 'perf', key: 'f', label: 'Performance', short: 'Prf', icon: '📈', blurb: 'metrics, profile, benchmarks, bottlenecks and a latency sparkline from each run', rows: 30 },
+  { id: 'automate', key: 'a', label: 'Automation', short: 'Aut', icon: '🤖', blurb: 'workflows, the twelve background workers and their daemon, loops, autopilot, sessions, config and a task kanban', rows: 44 },
+  { id: 'neural', key: 'l', label: 'Learning Lab', short: 'Lab', icon: '🧪', blurb: 'train neural patterns and watch the loss, ask the router which agent fits a task, and why', rows: 36 },
+  { id: 'vector', key: 'v', label: 'Vector Lab', short: 'Vec', icon: '🧲', blurb: 'ruvector: the shared brain, RVF stores, rvlite queries, decompile, workers, edge, hooks intel and your pi identity', rows: 44 },
+  { id: 'evolve', key: 't', label: 'Self-Evolution', short: 'Evo', icon: '🧬', blurb: 'the governed loop: flywheel receipts, ledger, lineage, the policy gate, the witness; Autogenous and rGi', rows: 44 },
+  { id: 'devtools', key: 'd', label: 'Dev Tools', short: 'Dev', icon: '🔧', blurb: 'the integration surface: GitHub, diff analysis, agenticow, WASM, browser, terminal, providers, maintenance', rows: 40 },
+  { id: 'sandbox', key: '', label: 'Sandbox', short: 'Sbx', icon: '🧫', blurb: 'isolated places to try things: tmux sessions, RVF copy-on-write branches, RVM', rows: 40 },
+  { id: 'market', key: 'm', label: 'Plugin Catalog', short: 'Cat', icon: '📦', blurb: 'every ruflo plugin, mod and skill: what it ships, install, enable, disable, update, view and use', rows: 50 },
+  { id: 'settings', key: 's', label: 'Settings', short: 'Set', icon: '⚙️', blurb: 'simple to advanced settings: plugin options, ruflo config, updates, and the AI terminal’s model and budget, each edited in place', rows: 50 },
 ]
 
 export const AGENT_VIEW = { id: 'agent' as const, rows: 28 }
@@ -128,7 +134,7 @@ export function optionsOf(raw: PluginOptions | undefined): Options {
 }
 
 /** A mutating action waiting for the person's second press; `shows` is the command line when it is not a ruflo one. */
-export type Pending = { label: string; args: readonly string[]; expect: string; askedAtMs: number; shows?: string; note?: string }
+export type Pending = { label: string; args: readonly string[]; expect: string; askedAtMs: number; shows?: string; note?: string; /** The kind of action, when it may be remembered (see remember.ts). */ rememberKey?: string; /** Where in its view the ask came from. */ scope?: string; /** The page that raised it: the ask shows in full there, and as a pointer on every other page. */ view?: string; /** Who raised it: Claude's tool call or the person's own action (ADR-450 T14). */ source?: 'claude' | 'you'; /** The class the entry declares for itself; the gate takes the stricter of this and the class read from its words. */ declared?: 'write' | 'network' | 'install' | 'spend' | 'delete'; /** The class of action, set only on Claude's asks. */ kind?: 'write' | 'network' | 'install' | 'spend' | 'delete' }
 
 /** The MetaHarness lab's last run: what it was, how it exited, its cost note, and its output as lines to scroll. */
 export type LabResult = { id: string; label: string; ok: boolean; exitCode: number | null; note?: string; lines: string[]; atMs: number }
@@ -162,10 +168,15 @@ export type Denied = { tool: string; reason: string; atMs: number }
 /** One sample of a measured series, with when it was taken. */
 export type Sample = { atMs: number; value: number }
 
+/** One thing Claude did with the console's tools (ADR-444): what, and how it came out. */
+export type ControlEntry = { atMs: number; tool: string; summary: string; outcome: 'ok' | 'waiting' | 'denied' | 'error'; detail: string }
+
 export type State = {
   options: Options
   cwd: string
   home: string | null
+  /** Session evidence from a confirmed JOIN, kept without background key access. */
+  nostrKeyVerifiedAtMs: number | null
   /** Claude Code's config directory: `$CLAUDE_CONFIG_DIR`, else `~/.claude`. Its plugin records are read from here. */
   configDir: string | null
   /** False in a session with no pane to show (claude -p, an SDK host): views are then answered as text. */
@@ -176,6 +187,8 @@ export type State = {
   /** The view to go back to from the drill-down. */
   back: ViewId
   isHelp: boolean
+  /** ruHelp: the question typed, and the guide open (null: the index). */
+  help: { query: string; topic: string | null }
   snapshot: Snapshot | null
   cache: ReadCache
   probes: Map<string, ProbeResult>
@@ -199,9 +212,31 @@ export type State = {
   eventFilter: 'all' | ConsoleEvent['kind']
   /** When the newest learning point arrived: the curve draws it in from there. */
   curveGrewAtMs: number
+  /** Kinds of action the person said never to ask about again, with a sample label (saved; Settings forgets them). */
+  allowed: Map<string, string>
+  /** The main nav's style, saved across sessions. */
+  nav: NavStyle
+  /** Whether to check for a newer published ruflo-console: ask first (the default), update without asking, or never check. Kept in the plugin's store. */
+  updates: UpdatesMode
+  /** What the last update check found, in a line, for Settings; empty until one has run. */
+  updateNote: string
+  /** A published version the person has not taken ("Not now"), shown on the band as a link to Settings; empty when there is none. */
+  updateAvailable: string
+  /** The nav group whose pages are showing, picked on this page (it follows the open page again once the page changes). */
+  navPick: { group: string; view: ViewId } | null
+  /** The nav search words (empty: no search). */
+  navQuery: string
+  /** The slash command names the session offered when last asked (for the mission skills). */
+  commandNames: string[]
+  /** True while the primary Claude session is running a turn (the band reports it each draw). */
+  turnActive: boolean
+  /** Collapsible sections the person flipped from their default (`<view>/<id>`): open ones closed, closed ones open. */
+  sections: Set<string>
+  /** What one-shot entry fields hold while typed (cleared on Enter), by field key. */
+  fieldText: Map<string, string>
   /** The dock width asked for (RUFLO_CONSOLE_COLUMNS, 40 to 400); 0 leaves the engine's share. A request: a dragged width wins. */
   dockColumns: number
-  pane: { isOpen: boolean; isShown: boolean; isFocused: boolean; columns: number; rows: number; placement: 'dock' | 'inline'; isClosedByPerson: boolean; autoTried: boolean; autoReason: string; /** When the pane last opened: the BBS boot screen plays from here. */ bootAtMs: number }
+  pane: { isOpen: boolean; isShown: boolean; isFocused: boolean; columns: number; rows: number; placement: 'dock' | 'inline'; isClosedByPerson: boolean; autoTried: boolean; autoReason: string; /** When the pane last opened: the BBS boot screen plays from here. */ bootAtMs: number; /** When the boot ended: the menu's entry plays from here (0: not yet). */ menuAtMs: number; /** When the page was last switched: its title strikes in from here (0: not since the pane opened). */ viewAtMs: number }
   /** The size of each Raster as last mounted, by key: a blit of any other size is refused, so none is sent. */
   mounted: Map<string, { columns: number; rows: number }>
   select: { claim: number; agent: number; task: number; item: number }
@@ -209,6 +244,9 @@ export type State = {
   drill: { agentId: string | null; logs: string[] | null; logsAtMs: number }
   palette: { isOpen: boolean; query: string; index: number; context: 'all' | 'selection' }
   pending: Pending | null
+  /** The key of the element last pressed, and the one the last ask or answer came from: the page draws them right there (views/attention.ts). */
+  lastPressed: string | null
+  origin: string | null
   outcome: Outcome | null
   isActing: boolean
   /** The MetaHarness lab: its last result, and the run in flight (j/k scroll the result through `select.item`). */
@@ -253,9 +291,11 @@ export type State = {
   /** The Self-Evolution view: the flywheel files as last read, and what its checks answered. */
   evolve: EvolveState
   /** The Dev Tools view: what is typed in its fields (its runs share the lab result panel, ids dt-*). */
-  devtools: { fields: DevFields }
+  devtools: { fields: DevFields; /** Whether tmux is on this machine, from a probe when the Sandbox page opens. */ tmux: 'unknown' | 'present' | 'missing' }
   timers: Map<string, Timer>
   stats: { renders: number[]; refreshes: number[]; frames: number[] }
+  /** Claude's control of the console (ADR-444): paused by the person, the call counts, and the log the dashboard shows. */
+  control: { paused: boolean; calls: number; turnCalls: number; /** Model-driven actions this session, by class (ADR-450 T8 budget). */ used: Record<string, number>; log: ControlEntry[]; /** Until when Claude counts as driving (a tool call extends it): the console does not spend a second Claude turn on guidance meanwhile. */ drivingUntilMs: number; /** True while one of Claude's tool calls is running: a person's "always allow" answer must not let Claude's call skip the level and confirm checks (ADR-444). */ viaModel: boolean }
 }
 
 export function newState(raw: PluginOptions | undefined): State {
@@ -263,12 +303,14 @@ export function newState(raw: PluginOptions | undefined): State {
     options: optionsOf(raw),
     cwd: '',
     home: null,
+    nostrKeyVerifiedAtMs: null,
     configDir: null,
     isInteractive: true,
     loadedAtMs: Date.now(),
     view: 'overview',
     back: 'overview',
     isHelp: false,
+    help: { query: '', topic: null },
     snapshot: null,
     cache: new Map(),
     probes: new Map(),
@@ -287,27 +329,41 @@ export function newState(raw: PluginOptions | undefined): State {
     eventFilter: 'all',
     curveGrewAtMs: 0,
     dockColumns: 0,
-    pane: { isOpen: false, isShown: false, isFocused: false, columns: 0, rows: 0, placement: 'inline', isClosedByPerson: false, autoTried: false, autoReason: '', bootAtMs: 0 },
+    nav: 'auto',
+    updates: 'ask',
+    updateNote: '',
+    updateAvailable: '',
+    navPick: null,
+    navQuery: '',
+    turnActive: false,
+    commandNames: [],
+    allowed: new Map(),
+    sections: new Set(),
+    fieldText: new Map(),
+    pane: { isOpen: false, isShown: false, isFocused: false, columns: 0, rows: 0, placement: 'inline', isClosedByPerson: false, autoTried: false, autoReason: '', bootAtMs: 0, menuAtMs: 0, viewAtMs: 0 },
     mounted: new Map(),
     select: { claim: 0, agent: 0, task: 0, item: 0 },
     drill: { agentId: null, logs: null, logsAtMs: 0 },
     palette: { isOpen: false, query: '', index: 0, context: 'all' },
     pending: null,
+    lastPressed: null,
+    origin: null,
     outcome: null,
     isActing: false,
     lab: { result: null, running: null },
     xruv: { result: null, running: null, pubkey: null, hasAdminToken: null },
     isRefreshing: false,
     barDrawnAtMs: 0,
-    terminal: { harness: 'codex', draft: '', lines: [], runs: new Map(), sessions: {}, isLive: { codex: false, claude: false }, turns: { codex: 0, claude: 0 }, costUsd: 0, costReports: 0, scroll: 0, unseen: 0, asked: null },
+    terminal: { harness: 'claude', draft: '', lines: [], runs: new Map(), sessions: {}, isLive: { codex: false, claude: false }, turns: { codex: 0, claude: 0 }, costUsd: 0, costReports: 0, scroll: 0, unseen: 0, asked: null },
     skills: emptySkills(),
     memoryLab: emptyMemoryLab(),
     auto: emptyAuto(),
     vector: emptyVector(),
     evolve: emptyEvolve(),
-    devtools: { fields: emptyFields() },
+    devtools: { fields: emptyFields(), tmux: 'unknown' },
     timers: new Map(),
     stats: { renders: [], refreshes: [], frames: [] },
+    control: { paused: false, calls: 0, turnCalls: 0, used: {}, log: [], drivingUntilMs: 0, viaModel: false },
   }
 }
 
@@ -349,8 +405,8 @@ export function restoreSessions(state: State, value: unknown): void {
 export const isSessionId = (id: string): boolean => SESSION_ID.test(id)
 
 /** The BBS boot screen's span: at least BOOT_MIN_MS, longer while the first read is still out, never past BOOT_MAX_MS. */
-export const BOOT_MIN_MS = 3_200
-export const BOOT_MAX_MS = 6_000
+export const BOOT_MIN_MS = 5_400
+export const BOOT_MAX_MS = 8_000
 
 export function isBooting(state: State, nowMs: number): boolean {
   if (state.options.look !== 'bbs' || !state.options.boot || state.pane.bootAtMs === 0) return false

@@ -78,6 +78,8 @@ describe('terminal sessions', () => {
   it('a new codex session reads the text from stdin; a known thread is resumed, still read-only', () => {
     const state = newState({})
 
+    state.terminal.harness = 'codex'
+
     expect(argvOf(state, 'codex', '--yolo')).toEqual(['codex', 'exec', '--json', '--sandbox', 'read-only', '--skip-git-repo-check', '-'])
     state.terminal.sessions.codex = '01a0fe1f-b077-7793-9612-f134bd61bc85'
     expect(argvOf(state, 'codex', 'next')).toEqual(['codex', 'exec', 'resume', '--json', '--skip-git-repo-check', '-c', 'sandbox_mode="read-only"', '01a0fe1f-b077-7793-9612-f134bd61bc85', '-'])
@@ -88,6 +90,8 @@ describe('terminal sessions', () => {
 
   it('the first message of a session is asked; the swarm shows both commands; once live, Enter sends', async () => {
     const state = newState({})
+
+    state.terminal.harness = 'codex'
     const { spawn, calls } = fakeSpawn({ codex: CODEX, claude: CLAUDE })
     const { host } = hostWith(spawn)
 
@@ -111,6 +115,8 @@ describe('terminal sessions', () => {
 
   it('codex: the thread id is kept, commands and the answer show, and the turn closes with its tokens', async () => {
     const state = newState({})
+
+    state.terminal.harness = 'codex'
     const { spawn } = fakeSpawn({ codex: CODEX })
     const { host, stored } = hostWith(spawn)
 
@@ -127,6 +133,8 @@ describe('terminal sessions', () => {
 
   it('claude: the answer types out from deltas (not twice), tool calls show, the cost is counted', async () => {
     const state = newState({})
+
+    state.terminal.harness = 'codex'
     const { spawn } = fakeSpawn({ claude: CLAUDE })
     const { host } = hostWith(spawn)
 
@@ -142,6 +150,8 @@ describe('terminal sessions', () => {
 
   it('a busy agent refuses a second question; s stops it; /new forgets the session', async () => {
     const state = newState({})
+
+    state.terminal.harness = 'codex'
     const { spawn } = fakeSpawn({ codex: [] }, true)
     const { host, stored } = hostWith(spawn)
 
@@ -163,12 +173,16 @@ describe('terminal sessions', () => {
   it('saved sessions come back only as id-shaped strings', () => {
     const state = newState({})
 
+    state.terminal.harness = 'codex'
+
     restoreSessions(state, { codex: '01a0fe1f-b077-7793-9612-f134bd61bc85', claude: '--resume; rm -rf' })
     expect(state.terminal.sessions).toEqual({ codex: '01a0fe1f-b077-7793-9612-f134bd61bc85' })
   })
 
   it('the ruflo harness splits words onto the CLI prefix with no shell and is asked every time', () => {
     const state = newState({})
+
+    state.terminal.harness = 'codex'
     const { host } = hostWith(fakeSpawn({}).spawn)
 
     state.terminal.harness = 'ruflo'

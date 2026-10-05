@@ -146,6 +146,9 @@ export const MEM_LAB: readonly MemEntry[] = [
   { id: 'mem-pattern-search', group: 'agentdb', name: 'PATTERN SEARCH', about: 'the ReasoningBank patterns nearest the text', label: 'pattern search <text>: nearest ReasoningBank patterns', cost: 'read', takes: 'text', args: input => (input.text === undefined ? null : tool('agentdb_pattern-search', { query: input.text, topK: 5 })) },
   { id: 'mem-recall', group: 'agentdb', name: 'RECALL', about: 'hierarchical recall across working/episodic/semantic', label: 'hierarchical recall <text>: across the three tiers', cost: 'read', takes: 'text', args: input => (input.text === undefined ? null : tool('agentdb_hierarchical-recall', { query: input.text, topK: 5 })) },
   { id: 'mem-graph', group: 'agentdb', name: 'GRAPH', about: 'the causal graph two hops out from a node id', label: 'graph query <node>: k-hop, depth 2', cost: 'read', takes: 'node', args: input => (input.key === undefined ? null : tool('agentdb_graph-query', { nodeId: input.key, mode: 'k-hop', depth: 2, topK: 10 })) },
+  { id: 'mem-synth', group: 'agentdb', name: 'SYNTHESIZE', about: 'a context brief assembled from the stored memories nearest the text', label: 'synthesize context <text>: a brief from the nearest memories', cost: 'read', takes: 'text', args: input => (input.text === undefined ? null : tool('agentdb_context-synthesize', { query: input.text, maxEntries: 10 })) },
+  { id: 'mem-sroute', group: 'agentdb', name: 'INTENT ROUTE', about: 'which intent route the text falls under (AgentDB SemanticRouter)', label: 'intent route <text>: classify with the SemanticRouter', cost: 'read', takes: 'text', args: input => (input.text === undefined ? null : tool('agentdb_semantic-route', { input: input.text })) },
+  { id: 'mem-path', group: 'agentdb', name: 'PATHFINDER', about: 'ranked graph paths from a node toward a question (personalized PageRank)', label: 'pathfinder <node> | <question>: ranked paths, depth 3', cost: 'read', takes: 'pair', args: input => (input.text === undefined || input.other === undefined ? null : tool('agentdb_graph-pathfinder', { seedNodeId: input.text.trim(), query: input.other, depth: 3, topK: 10, algorithm: 'personalized-pagerank' })) },
   { id: 'mem-pattern-store', group: 'agentdb', name: 'PATTERN STORE', about: 'save the text as a ReasoningBank pattern', label: 'pattern store <text>: save a ReasoningBank pattern', cost: 'writes', takes: 'text', args: input => (input.text === undefined ? null : tool('agentdb_pattern-store', { pattern: input.text, type: 'console' })), note: '$0, local: writes one pattern to AgentDB' },
   { id: 'mem-hstore', group: 'agentdb', name: 'TIER STORE', about: 'the store fields into the working tier', label: 'hierarchical store <namespace> <key> <value>: working tier', cost: 'writes', takes: 'kv', args: input => (input.key === undefined || input.value === undefined ? null : tool('agentdb_hierarchical-store', { key: input.key, value: input.value, tier: 'working' })), note: '$0, local: writes one entry to the working tier (the namespace is not used by this tool)' },
   { id: 'mem-edge', group: 'agentdb', name: 'CAUSAL EDGE', about: 'link two nodes: <source> <relation> <target>', label: 'causal edge <source> <relation> <target>: link two nodes', cost: 'writes', takes: 'edge', args: input => (input.key === undefined || input.other === undefined || input.relation === undefined ? null : tool('agentdb_causal-edge', { sourceId: input.key, targetId: input.other, relation: input.relation })), note: '$0, local: writes one edge to the AgentDB causal graph' },
@@ -189,6 +192,7 @@ export function memSpec(entry: MemEntry, input: MemInput, state: State): ActionS
     args,
     expect: entry.cost === 'read' ? 'its output in the lab' : `its result in the lab${entry.note !== undefined ? `; ${entry.note}` : ''}`,
     lab: entry.id,
+    scope: `mem:${state.memoryLab.origin}`,
     lines: (stdout, stderr) => memLines(entry.id, stdout, stderr),
     ...(entry.cost === 'read' && { isReadOnly: true }),
     ...(entry.note !== undefined && { note: entry.note }),
@@ -215,9 +219,11 @@ export type MemoryLabState = {
   text: string
   filter: string | null
   page: number
+  /** The area the last action was raised in (search, entry, browse, or a lab group): its confirm and its result are drawn there. */
+  origin: string
 }
 
-export const emptyMemoryLab = (): MemoryLabState => ({ query: '', scope: 'memory', key: '', value: '', namespace: 'default', text: '', filter: null, page: 0 })
+export const emptyMemoryLab = (): MemoryLabState => ({ query: '', scope: 'memory', key: '', value: '', namespace: 'default', text: '', filter: null, page: 0, origin: 'entry' })
 
 export type MemField = 'query' | 'key' | 'value' | 'namespace' | 'text'
 
@@ -250,10 +256,12 @@ export type MemoryActions = {
 
 export function memoryActions(state: State, runner: Runner, invalidate: () => void): MemoryActions {
   const lab = state.memoryLab
-  const go = (id: string, text: string) => {
+  const go = (id: string, text: string, origin: string) => {
     const entry = memEntry(id)
 
     if (entry === undefined) return
+
+    lab.origin = origin
 
     // A fresh result reads from its top.
     state.select.item = 0
@@ -266,7 +274,7 @@ export function memoryActions(state: State, runner: Runner, invalidate: () => vo
     },
     search: text => {
       lab.query = text
-      go(lab.scope === 'unified' ? 'mem-unified' : 'mem-search', text)
+      go(lab.scope === 'unified' ? 'mem-unified' : 'mem-search', text, 'search')
     },
     scope: () => {
       lab.scope = lab.scope === 'memory' ? 'unified' : 'memory'
@@ -275,10 +283,11 @@ export function memoryActions(state: State, runner: Runner, invalidate: () => vo
     run: id => {
       const entry = memEntry(id)
 
-      if (entry !== undefined) go(id, textOfFields(entry, lab))
+      // The entry fields' own buttons answer under the entry fields; a lab row answers under its group.
+      if (entry !== undefined) go(id, textOfFields(entry, lab), id === 'mem-store' || id === 'mem-retrieve' || id === 'mem-delete' ? 'entry' : entry.group)
     },
-    open: entry => go('mem-retrieve', `${entry.namespace} ${entry.key}`),
-    remove: entry => go('mem-delete', `${entry.namespace} ${entry.key}`),
+    open: entry => go('mem-retrieve', `${entry.namespace} ${entry.key}`, 'browse'),
+    remove: entry => go('mem-delete', `${entry.namespace} ${entry.key}`, 'browse'),
     filter: namespace => {
       lab.filter = lab.filter === namespace ? null : namespace
       lab.page = 0

@@ -3,6 +3,7 @@ import type { RenderElement } from 'claude-code'
 import { shortRef, type Manifest, type Receipt } from '../data/evolve'
 import { candidateReceipt, EVOLVE, evolveSpec, PROMOTE_COMMAND, REPOS, type EvolveEntry } from '../evolve'
 import { lineageOf, loopStagesOf, type LineageRow } from '../gfx/evolve'
+import { slot } from './attention'
 import { ago, button, clip, col, kv, picture, row, rule, text, THEME, type Ctx } from './common'
 
 /** Result lines in view at once; j/k scroll the rest. */
@@ -193,7 +194,7 @@ function resultRows(ctx: Ctx): RenderElement[] {
   for (const line of result.lines.slice(top, top + RESULT_ROWS)) out.push(text(ctx, `   ${line}`))
   if (result.lines.length > RESULT_ROWS) out.push(row(ctx, [text(ctx, ` lines ${top + 1}-${Math.min(result.lines.length, top + RESULT_ROWS)} of ${result.lines.length} `, { dimColor: true }), button(ctx, 'evolve-up', 'up', () => ctx.act.select(-1), { hotkey: 'k' }), button(ctx, 'evolve-down', 'down', () => ctx.act.select(1), { hotkey: 'j' })]))
 
-  return out
+  return slot(ctx, out)
 }
 
 /**
@@ -224,3 +225,6 @@ export function evolveView(ctx: Ctx): RenderElement {
     'evolve',
   )
 }
+
+/** This view's result block alone: the pane asks for it to place under the row that was clicked. */
+export const evolveResult = (ctx: Ctx): RenderElement[] => resultRows(ctx)

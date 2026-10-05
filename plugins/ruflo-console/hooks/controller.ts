@@ -5,7 +5,8 @@
  */
 import { actionsOf } from './bindings'
 import type { Catalog } from './data/catalog'
-import { PROBES, probeArgv, type ProbeResult } from './data/cli'
+import { PROBES, probeArgv, probeError, probeReady, type ProbeResult } from './data/cli'
+import { ALL_COST_PROBES as COST_PROBES } from './data/cost-probes'
 import { X_PROBES } from './data/xruv'
 import { diffEvents, record } from './data/events'
 import { plain } from './data/parse'
@@ -14,17 +15,24 @@ import { markPicture } from './gfx/pictures'
 import type { Host } from './host'
 import { agentLogs } from './ops'
 import { createRunner, type Runner } from './runner'
-import { loadEvolve } from './evolve'
+import { advance, loadLedger, mcOf } from './mission-control'
+import { hasLiveWork } from './mission-list'
+import { loadAllowed } from './remember'
+import { loadAiPrefs } from './settings'
+import { openLoaders } from './view-open'
 import { listSkills } from './skills'
-import { CLI_PREFIXES, isBooting, PANE_ID, push, rowsOf, storeKeyOf, type State } from './state'
+import { readDrillLogs } from './drill-logs'
+import { entryAge } from './menu-entry'
+import { BOOT_MIN_MS, CLI_PREFIXES, isBooting, NAV_KEY, NAV_STYLES, PANE_ID, push, rowsOf, storeKeyOf, type State } from './state'
 import type { Actions } from './views/common'
 import { picturesOf } from './views/frames'
+import { pulseDue } from './pulse'
 
 const ACTIVITY_BUCKET_MS = 5_000
 const PANE_WATCH_MS = 1_000
 const MAX_PARALLEL_PROBES = 2
 /** The CLI probes and the x.ruv.io board's two network reads, one cadence and one option gate for all. */
-const ALL_PROBES = [...PROBES, ...X_PROBES]
+const ALL_PROBES = [...PROBES, ...X_PROBES, ...COST_PROBES]
 const BAR_FRESH_MS = 10_000
 const IDLE_REFRESH_MS = 30_000
 const TOOLS_RECOUNT_MS = 30_000
@@ -125,8 +133,8 @@ export function createController(state: State, host: Host): Controller {
       ])
       const previous = state.snapshot
       const now = Date.now()
-      const snapshot = await readSnapshot(host.fs, state.cache, state.cwd, state.home, settings, now, state.configDir)
-
+      const snapshot = await readSnapshot(host.fs, state.cache, state.cwd, state.home, settings, now, state.configDir, state.options.federationNetwork)
+      if (snapshot.hasNostrKey === false) state.nostrKeyVerifiedAtMs = null
       state.snapshot = snapshot
       record(state.events, diffEvents(previous, snapshot, now))
 
@@ -200,9 +208,9 @@ export function createController(state: State, host: Host): Controller {
     lastAttempt.set(probe.id, Date.now())
 
     try {
-      const result = await host.run(probeArgv(probe, state.options.cli), probe.timeoutMs)
+      const argv = probeArgv(probe, state.options.cli, state)
+      const result = await host.run(argv, probe.timeoutMs)
       const value = result.exitCode === 0 ? (probe.parse(result.stdout) as unknown) : null
-
       state.probes.set(
         probe.id,
         value !== null
@@ -211,7 +219,7 @@ export function createController(state: State, host: Host): Controller {
               ...held,
               isRunning: false,
               errorAtMs: Date.now(),
-              error: result.exitCode !== 0 ? `exit ${result.exitCode}: ${plain(result.stderr.split('\n').find(line => line.trim() !== '') ?? '', 100) || 'no message'}` : 'no JSON in the CLI output',
+              error: probeError(argv, result),
             },
       )
     } catch (error) {
@@ -228,7 +236,7 @@ export function createController(state: State, host: Host): Controller {
       entry =>
         (isVisible() || force) &&
         entry.views.includes(state.view) &&
-        (!entry.isNetwork || state.options.federationNetwork) &&
+        (!entry.isNetwork || state.options.federationNetwork) && probeReady(entry, state) &&
         (force || (state.probes.get(entry.id)?.isRunning !== true && now - (lastAttempt.get(entry.id) ?? 0) >= entry.everyMs)),
     )
 
@@ -246,17 +254,17 @@ export function createController(state: State, host: Host): Controller {
     state.timers.delete(name)
   }
 
-  /** One frame of every picture of the view in front, each blitted only at the size it was mounted. */
-  // Whether the last frame drew the boot screen: when it ends the whole pane redraws once, and an unfocused pane's
-  // loop stops again (the boot screen animates whether or not the pane holds the keys).
+  // Whether the last frame drew the boot screen: when it ends the whole pane redraws once, and an unfocused pane's loop stops again.
   let wasBooting = false
 
+  /** One frame of every picture of the view in front, each blitted only at the size it was mounted. */
   function frame(): void {
     const started = Date.now()
     const booting = isBooting(state, started)
 
     if (wasBooting && !booting) {
       wasBooting = false
+      state.pane.menuAtMs = Date.now()
       host.invalidate()
       animate()
 
@@ -264,6 +272,8 @@ export function createController(state: State, host: Host): Controller {
     }
 
     wasBooting = booting
+
+    if (pulseDue(state.view, started) || (state.view === 'menu' && entryAge({ look: state.options.look, boot: state.options.boot, ...state.pane }, started, BOOT_MIN_MS) !== null)) host.invalidate()
 
     for (const [key, grid] of picturesOf(state, state.pane.columns, Date.now(), Date.now())) {
       const mounted = state.mounted.get(key)
@@ -278,11 +288,10 @@ export function createController(state: State, host: Host): Controller {
 
   /** Runs the frame loop while the pane is shown and holds the keys (or plays the boot screen), at `fps`; stops it otherwise. */
   function animate(): void {
-    if (!(state.options.fps > 0 && isVisible() && (state.pane.isFocused || isBooting(state, Date.now())) && state.mounted.size > 0)) {
-      cancel('frames')
+    // Something in progress moves its spinner, pictured or not: a lab action in flight, or a live mission, task or guidance run on the Missions page.
+    const moving = state.lab.running !== null || (state.view === 'missions' && hasLiveWork(state.snapshot?.missions?.missions ?? [], mcOf(state).guidance?.status === 'running'))
 
-      return
-    }
+    if (!(state.options.fps > 0 && isVisible() && (state.pane.isFocused || isBooting(state, Date.now())) && (state.mounted.size > 0 || moving))) return cancel('frames')
 
     every('frames', Math.round(1000 / state.options.fps), frame)
   }
@@ -306,6 +315,16 @@ export function createController(state: State, host: Host): Controller {
   function start(): void {
     let lastIdleMs = 0
 
+    // The AI terminal's saved model and budget apply from the first turn, not only once Settings was opened.
+    void loadAiPrefs(state, host)
+    void loadAllowed(state, host)
+    void loadLedger(state, host)
+    void host.storeGet(NAV_KEY).then(saved => {
+      const style = NAV_STYLES.find(candidate => candidate === saved)
+
+      if (style !== undefined) state.nav = style
+    }, () => undefined)
+
     every('refresh', state.options.refreshSeconds * 1000, () => {
       const now = Date.now()
       const isSeen = state.pane.isOpen || now - state.barDrawnAtMs < BAR_FRESH_MS
@@ -313,7 +332,10 @@ export function createController(state: State, host: Host): Controller {
       // Nothing on screen reads the disk: re-read only on the idle cadence, so a closed console costs nearly nothing.
       if (isSeen || now - lastIdleMs >= IDLE_REFRESH_MS) {
         lastIdleMs = now
-        void refresh().then(() => probe())
+        void refresh().then(() => {
+          void probe()
+          advance(state, host)
+        })
       }
     })
     every('activity', ACTIVITY_BUCKET_MS, () => {
@@ -388,12 +410,16 @@ export function createController(state: State, host: Host): Controller {
     if (view !== state.view) {
       if (view === 'agent' || state.view !== 'agent') state.back = state.view === 'agent' ? state.back : state.view
       state.view = view
+      // A group picked on one page (the menu's pages row) does not follow you to the next, or back to this one.
+      state.navPick = null
+      state.pane.viewAtMs = Date.now()
       state.select.item = 0
       state.mounted.clear()
       persist()
       // A new view asks for its own height inline; the dock ignores it.
       if (state.pane.isOpen) void host.openPane({ id: PANE_ID, title: 'ruflo', rows: rowsOf(view), ...(state.dockColumns > 0 && { columns: state.dockColumns }) }).catch(() => undefined)
       void probe(true)
+      host.scrollTop()
     }
 
     host.invalidate()
@@ -404,8 +430,7 @@ export function createController(state: State, host: Host): Controller {
       void listSkills(state, host)
       focusField('skills-search')
     }
-    // Opening Self-Evolution reads ruflo's own flywheel files (local, no CLI run); its checks wait for a click.
-    if (view === 'evolve') void loadEvolve(state, host)
+    openLoaders(state, host, view)
   }
 
   /**
@@ -430,15 +455,7 @@ export function createController(state: State, host: Host): Controller {
 
     const spec = agent === undefined ? null : agentLogs(agent)
 
-    if (spec !== null) {
-      void host
-        .run([...CLI_PREFIXES[state.options.cli], ...spec.args], 30_000)
-        .then(result => {
-          if (state.drill.agentId === agentId) state.drill = { agentId, logs: result.stdout.split('\n').map(line => plain(line, 160)).filter(Boolean).slice(-12), logsAtMs: Date.now() }
-        })
-        .catch(() => undefined)
-        .finally(() => host.invalidate())
-    }
+    if (spec !== null) readDrillLogs(state, host, agentId, spec.args)
   }
 
   const runner = createRunner(state, host, {
@@ -447,7 +464,7 @@ export function createController(state: State, host: Host): Controller {
     drill,
     command: name => (name === 'refresh' ? actions.refresh() : name === 'help' ? actions.help() : actions.close()),
   })
-  const actions: Actions = actionsOf(state, host, runner, { freshRead, probe, setView, drill, close })
+  const actions: Actions = actionsOf(state, host, runner, { freshRead, probe, setView, drill, close, animate })
 
   function markFrame(requestId: string, isWorking: boolean): void {
     markRequest = requestId

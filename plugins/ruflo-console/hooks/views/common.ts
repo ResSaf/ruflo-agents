@@ -3,17 +3,34 @@
  * and the pictures computed for this frame. They call nothing on the engine; buttons call the closures in `ctx.act`.
  * Text colours are theme names only, so nothing fades on a light background.
  */
+import type { AskActions } from '../ask-claude'
+import type { OptimizerActions } from '../optimizer'
+import { askedBy } from '../data/room'
+import type { RoomActions } from '../room'
+import type { WatchActions } from '../watch'
+import type { Attention } from './attention'
+import { HEADS, mark as marked } from './marks'
+import type { LoopActions } from '../loops'
 import type { Elements, RenderChildren, RenderElement } from 'claude-code'
 
 import type { ProbeResult } from '../data/cli'
 import type { EvolveActions } from '../evolve'
+import type { MissionActions } from '../mission-control'
+import type { CatalogActions } from '../plugin-catalog'
+import type { SettingsActions } from '../settings'
 import type { DevtoolsActions } from '../devtools'
 import type { Grid } from '../gfx/raster'
 import type { MemoryActions } from '../memory-lab'
+import type { NavActions } from '../nav-state'
 import type { SkillActions } from '../skills'
+import type { HelpActions } from '../help-actions'
+import type { PluginOp } from '../plugin-ops'
 import { START_LABEL, type StartId } from '../starts'
 import type { MoreSkillActions } from '../skills-lab'
-import type { HarnessId, State, ViewId } from '../state'
+import { VIEWS, type HarnessId, type NavStyle, type State, type ViewId } from '../state'
+import type { UpdatesMode } from '../updates'
+import { chip, COST_CHIP } from '../menu-colors'
+import { accentOfView } from '../nav-state'
 import type { VectorActions } from '../vector'
 
 export type Kit = Pick<Elements['terminal'], 'Box' | 'Text' | 'Button'> & { Raster?: Elements['terminal']['Raster']; Input?: Elements['terminal']['Input'] }
@@ -22,6 +39,8 @@ export type Kit = Pick<Elements['terminal'], 'Box' | 'Text' | 'Button'> & { Rast
 export type Actions = {
   view: (id: ViewId) => void
   refresh: () => void
+  /** Refresh and replay the intro boot screen: the footer button and the r key. */
+  restart: () => void
   help: () => void
   close: () => void
   back: () => void
@@ -50,9 +69,11 @@ export type Actions = {
   /** Puts the keys in one of the pane's fields by its key (a row that takes text focuses its field). */
   focus: (key: string) => void
   start: (id: StartId, text?: string) => void
+  /** The marketplace update on the Plugins and Plugin Catalog pages: asks first, then runs one `claude plugin` command. */
+  plugin: (op: PluginOp) => void
   /** The main menu's prompt: a key or a name takes the person to that area. */
   menu: (text: string) => void
-  term: { harness: (id: HarnessId) => void; draft: (text: string) => void; submit: (text: string) => void; stop: () => void; fresh: () => void; clear: () => void; load: (id: HarnessId, text: string) => void; /** Moves the window up (positive) or down by screen rows. */ scroll: (by: number) => void; /** Puts an earlier question back in the field. */ reuse: (text: string) => void }
+  term: { harness: (id: HarnessId) => void; draft: (text: string) => void; submit: (text: string) => void; stop: () => void; fresh: () => void; clear: () => void; load: (id: HarnessId, text: string) => void; /** A click on an ask link: opens the terminal, picks the agent and sends the text at once (read-only, plan mode, the saved per-turn budget): the reply streams in with no second click. */ ask: (id: HarnessId, text: string) => void; /** Moves the window up (positive) or down by screen rows. */ scroll: (by: number) => void; /** Puts an earlier question back in the field. */ reuse: (text: string) => void }
   /** The skills view: list, search, and the confirm-gated add, remove, update and create; edit loads the terminal. */
   skills: SkillActions & MoreSkillActions
   /** The Memory Lab: its fields, search, browse filter, and an entry's open or delete (each through the runner). */
@@ -63,6 +84,44 @@ export type Actions = {
   evolve: EvolveActions
   /** The Dev Tools view: keep a field's text, and Enter in a field runs its entry. */
   devtools: DevtoolsActions
+  /** The Loop Manager (Automation): presets, the configurator, and the launcher into the Claude UI. */
+  loops: LoopActions
+  /** The Optimizer (Overview): scope, fixes (each asks first) and asking Claude about a finding. */
+  optimizer: OptimizerActions
+  /** The Timeline and Events pages: look-back range, kind filter, search, pause, paging, an event's detail, and asking about one. */
+  watch: WatchActions
+  /** The Room (ADR-448): the draft, what to send through, the feed's source filter, search, pause and paging. */
+  room: RoomActions
+  /** Ask Claude about this section (a visible prompt or a /btw aside) or run the plugin command that fits it: each asks first. */
+  ask: AskActions
+  /** ruHelp, the built-in help: a question, a guide, a step's button, and asking Claude with the docs. */
+  ruhelp: HelpActions
+  /** Mission Control: goal, profile, create, run next, pause/resume/cancel, auto-run, ask aside, guide Claude. */
+  mission: MissionActions
+  /** Claude's control of the console (ADR-444): the person takes it back, or gives it back. */
+  control: { pause: (on: boolean) => void }
+  /** The Plugin Catalog: read the clone, filter, select a plugin, view or use an item, change a plugin (each asks first). */
+  catalog: CatalogActions
+  /** Puts text back in an entry field and gives it the keys, so what was entered can be edited and sent again. */
+  editField: (key: string, text: string) => void
+  /** Empties an entry field after its Enter. */
+  clearField: (key: string) => void
+  /** The confirm row's "always allow this kind of action": remembers the kind (Settings forgets it) and runs the pending ask. */
+  remember: () => void
+  /** Forgets one remembered kind of action, or all of them (an empty key). */
+  forget: (key: string) => void
+  /** The nav card: show a group's pages, search the pages, clear the search. */
+  navigator: NavActions
+  /** Sets how the main nav spells its tabs (saved). */
+  nav: (style: NavStyle) => void
+  /** Sets whether to check for a newer published ruflo-console: ask first, update without asking, or never (saved). */
+  updates: (mode: UpdatesMode) => void
+  /** Checks now, whatever the daily gate or an off setting says (it still asks before installing, and skips a development checkout). */
+  checkUpdates: () => void
+  /** Opens or closes a collapsible section (`<view>/<id>`). */
+  toggle: (key: string) => void
+  /** Settings: the level, a plugin, an option or ruflo config change (each asks first), AI preferences, and ▸ ask claude/codex. */
+  settings: SettingsActions
 }
 
 export type Ctx = {
@@ -73,6 +132,10 @@ export type Ctx = {
   /** Every picture of this view, by Raster key, already drawn for this frame. */
   pictures: Map<string, Grid>
   act: Actions
+  /** True while the page is drawn in cards (views/card.ts): a section header then needs no blank row above it. */
+  cards?: boolean
+  /** The page's attention panel (views/attention.ts): lab views hand their result rows to it with `slot`. */
+  attention?: Attention
 }
 
 export type Look = 'bbs' | 'plain'
@@ -94,6 +157,34 @@ export function setLook(next: Look): void {
 }
 
 export const isBbs = (): boolean => look === 'bbs'
+
+/**
+ * A cost tag (`$0`, `wr`, `net`, `$$`) on a run row. In the BBS look it is a solid chip, the way the menu draws a key: the ink on a ground
+ * by how much the run asks (a read green, local work or a write cyan, the network amber, spending or deleting red). In the plain look it
+ * is coloured text, as it always was. `color` is the tag's theme colour; a colour that is none of the four stays text.
+ */
+export function tagChip(ctx: Ctx, text: string, color: string): RenderElement {
+  const ground = look !== 'bbs' ? undefined : color === THEME.ok ? COST_CHIP.ok : color === THEME.info ? COST_CHIP.info : color === THEME.warn ? COST_CHIP.warn : color === THEME.bad ? COST_CHIP.bad : undefined
+
+  if (ground === undefined) return ctx.kit.Text({ bold: true, color, children: ` ${text}` })
+
+  return ctx.kit.Box({ flexDirection: 'row', children: [ctx.kit.Text({ children: ' ' }), ctx.kit.Text({ ...chip(ground), children: text })] })
+}
+
+/** Words wrapped to `width`, so a long line reads as several instead of running off the edge. */
+export function wrap(line: string, width: number): string[] {
+  const out: string[] = []
+  let current = ''
+
+  for (const word of line.split(' ')) {
+    if (current !== '' && current.length + word.length + 1 > width) {
+      out.push(current)
+      current = word
+    } else current = current === '' ? word : `${current} ${word}`
+  }
+
+  return current === '' ? out : [...out, current]
+}
 
 export const clip = (text: string, width: number): string => (text.length <= width ? text : `${text.slice(0, Math.max(0, width - 1))}…`)
 
@@ -132,6 +223,40 @@ export function col(ctx: Ctx, parts: readonly RenderChildren[], key?: string): R
   return ctx.kit.Box({ flexDirection: 'column', ...(key !== undefined && { key }), children: [...parts] })
 }
 
+/** The colour a BBS page's section headers wear: the accent of its nav group (the menu's colours), else the theme's. Plain look: the theme's. */
+function accentOf(ctx: Ctx): string {
+  return look === 'bbs' ? (accentOfView(ctx.state.view === 'agent' ? ctx.state.back : ctx.state.view) ?? THEME.info) : THEME.info
+}
+
+/**
+ * A collapsible section: its header is a button (▾ open, ▸ closed) and the rows follow only while it is open. `open` is the
+ * section's default; pressing the header flips it for this session. The header reads as `rule` does.
+ */
+export function section(ctx: Ctx, id: string, title: string, right: string, children: readonly RenderElement[], isOpenByDefault = true): RenderElement[] {
+  const key = `${ctx.state.view}/${id}`
+  const isOpen = isOpenByDefault !== ctx.state.sections.has(key)
+  const mark = isOpen ? '▾' : '▸'
+  const head = look === 'bbs' ? `▓▒░ ${mark} ${title.toUpperCase()} ░▒▓` : `${mark} ${title}`
+  const fill = Math.max(1, ctx.columns - head.length - right.length - 2)
+
+  return [
+    ...(look === 'bbs' && ctx.cards !== true ? [ctx.kit.Text({ children: ' ' })] : []),
+    marked(
+      HEADS,
+      row(
+        ctx,
+        [
+          ctx.kit.Button({ key: `sec-${id}`, label: head, plain: true, onPress: () => ctx.act.toggle(key) }),
+          ctx.kit.Text({ color: accentOf(ctx), dimColor: true, children: `${(look === 'bbs' ? '═' : '─').repeat(fill)} ` }),
+          ctx.kit.Text({ color: accentOf(ctx), children: right }),
+        ],
+        `sec-row-${id}`,
+      ),
+    ),
+    ...(isOpen ? children : []),
+  ]
+}
+
 /** A section title with a rule to the right edge. */
 export function rule(ctx: Ctx, title: string, right = ''): RenderElement {
   if (look === 'bbs') {
@@ -139,16 +264,15 @@ export function rule(ctx: Ctx, title: string, right = ''): RenderElement {
     const head = `▓▒░ ${title.toUpperCase()} ░▒▓`
     const fill = Math.max(1, ctx.columns - head.length - right.length - 2)
 
-    // A blank line above each section, so the board breathes instead of packing every block together.
-    return col(ctx, [
-      ctx.kit.Text({ children: ' ' }),
-      row(ctx, [ctx.kit.Text({ bold: true, color: THEME.head, children: head }), ctx.kit.Text({ color: THEME.info, dimColor: true, children: `${'═'.repeat(fill)} ` }), ctx.kit.Text({ color: THEME.info, children: right })]),
-    ])
+    const line = row(ctx, [ctx.kit.Text({ bold: true, color: accentOf(ctx), children: head }), ctx.kit.Text({ color: accentOf(ctx), dimColor: true, children: `${'═'.repeat(fill)} ` }), ctx.kit.Text({ color: accentOf(ctx), children: right })])
+
+    // In a card the header is the card's first row; otherwise a blank line above each section, so the board breathes instead of packing every block together.
+    return ctx.cards === true ? marked(HEADS, line) : marked(HEADS, col(ctx, [ctx.kit.Text({ children: ' ' }), line]))
   }
 
   const fill = Math.max(1, ctx.columns - title.length - right.length - 3)
 
-  return row(ctx, [ctx.kit.Text({ bold: true, color: THEME.head, children: title }), ctx.kit.Text({ dimColor: true, children: ` ${'─'.repeat(fill)} ` }), ctx.kit.Text({ dimColor: true, children: right })])
+  return marked(HEADS, row(ctx, [ctx.kit.Text({ bold: true, color: THEME.head, children: title }), ctx.kit.Text({ dimColor: true, children: ` ${'─'.repeat(fill)} ` }), ctx.kit.Text({ dimColor: true, children: right })]))
 }
 
 /** A label and its value; the value dims when it is n/a. */
@@ -217,4 +341,80 @@ export function live<T>(result: ProbeResult | undefined): T | null {
   if (result.error !== null && (result.errorAtMs ?? 0) >= (result.okAtMs ?? 0)) return null
 
   return result.value as T
+}
+
+/**
+ * The ask a click or an Enter raised, with the exact command, its note, and Yes / Cancel (and the remember choices). A view
+ * in INLINE_CONFIRM draws it itself, right under the field the person typed in; every other view gets it above its body.
+ * `scope` is where the ask came from: a view draws only the asks that belong under its own fields.
+ */
+export function confirmRow(ctx: Ctx): RenderElement | null {
+  const pending = ctx.state.pending
+
+  if (pending === null) return null
+
+  // An ask belongs to the page that raised it: anywhere else it is one line, with a way there and a way to drop it.
+  if (pending.view !== undefined && pending.view !== ctx.state.view) {
+    const where = VIEWS.find(entry => entry.id === pending.view)
+
+    return row(
+      ctx,
+      [
+        text(ctx, `⚠ An ask is waiting on ${where?.label ?? pending.view}: ${clip(askedBy(pending) + pending.label, Math.max(16, ctx.columns - 64))} `, { bold: true, color: THEME.warn }),
+        button(ctx, 'confirm-go', 'Go there', () => ctx.act.view(pending.view as ViewId)),
+        button(ctx, 'cancel', 'Cancel (n)', ctx.act.cancel, { hotkey: 'n' }),
+      ],
+      'confirm',
+    )
+  }
+
+  // One bordered card in the warning colour: the person says yes to everything in it, so it reads as a unit, not as loose lines. Its border and
+  // padding take four columns, so the text inside is clipped to the narrower width.
+  const inner: Ctx = { ...ctx, columns: Math.max(20, ctx.columns - 4) }
+  const hasMoney = pending.note !== undefined && /money|models/i.test(pending.note)
+
+  return ctx.kit.Box({
+    key: 'confirm',
+    flexDirection: 'column',
+    borderStyle: 'round',
+    borderColor: THEME.warn,
+    paddingX: 1,
+    children: [
+      row(ctx, [ctx.kit.Text({ bold: true, color: THEME.warn, children: '▶ CONFIRM NEEDED' }), ctx.kit.Text({ dimColor: true, children: '  click Yes or press y' })]),
+      text(inner, '─'.repeat(inner.columns), { dimColor: true }),
+      text(inner, `Confirm: ${askedBy(pending)}${pending.label.replace(/\?+$/, '')}?`, { bold: true, color: THEME.warn }),
+      // Wrapped, not clipped: the person says yes to the whole argv, so all of it shows (a JSON argument runs long).
+      ctx.kit.Text({ dimColor: true, wrap: 'wrap', children: `runs: ${pending.shows ?? `ruflo ${pending.args.join(' ')}`}` }),
+      ...(pending.note !== undefined ? [ctx.kit.Text({ wrap: 'wrap', bold: hasMoney, color: hasMoney ? THEME.bad : THEME.warn, children: `Effect: ${pending.note}` })] : []),
+      ctx.kit.Box({
+        flexDirection: 'row',
+        marginTop: 1,
+        children: [
+          button(ctx, 'confirm', 'Yes, run it (y)', ctx.act.confirm, { hotkey: 'y', primary: true }),
+          button(ctx, 'cancel', 'Cancel (n)', ctx.act.cancel, { hotkey: 'n' }),
+          // A low-risk ruflo action may be remembered: it is not asked again (Settings lists and forgets it).
+          ...(pending.rememberKey !== undefined ? [button(ctx, 'remember', `Always allow “${pending.rememberKey}”`, () => ctx.act.remember())] : []),
+          // An AI terminal turn (claude -p in plan mode, codex read-only, the budget cap) may be always accepted: Settings resets it.
+          ...(ctx.state.terminal.asked !== null && pending.label === ctx.state.terminal.asked.label && ctx.state.terminal.harness !== 'ruflo' ? [button(ctx, 'always', 'Always accept AI turns', () => ctx.act.settings.alwaysAccept())] : []),
+        ],
+      }),
+    ],
+  })
+}
+
+/** Views that draw the confirm themselves, under the field it came from (the pane then does not draw it above the body). */
+export const INLINE_CONFIRM: ReadonlySet<string> = new Set(['missions', 'hive'])
+
+/** True when the view draws this ask itself (under what raised it), so the pane does not also draw it at the top. */
+export const confirmInline = (view: string, scope: string | undefined): boolean => (scope === 'ask' ? false : view === 'memory' ? scope?.startsWith('mem:') === true : INLINE_CONFIRM.has(view))
+
+/** The confirm row when the pending ask came from this scope (or has none, and this is the view's default place for it). */
+export function confirmHere(ctx: Ctx, scope: string, isDefault = false): RenderElement[] {
+  const pending = ctx.state.pending
+
+  if (pending === null || (pending.scope ?? (isDefault ? scope : '')) !== scope) return []
+
+  const row = confirmRow(ctx)
+
+  return row === null ? [] : [row]
 }

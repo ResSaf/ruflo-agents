@@ -16,7 +16,7 @@ import { eggBottomPicture, eggTopPicture } from '../gfx/hive-egg'
 import { stripPicture, type Mark, type StripModel } from '../gfx/hive-strip'
 import type { Grid } from '../gfx/raster'
 import type { State } from '../state'
-import { ago, button, clip, col, kv, picture, row, rule, starts, text, THEME, type Ctx } from './common'
+import { ago, button, clip, col, confirmHere, kv, picture, row, rule, starts, text, THEME, type Ctx } from './common'
 
 const ROLE_GLYPH: Record<string, string> = { worker: '●', specialist: '◆', scout: '▲' }
 const LIVE_THEME = (liveness: Liveness): { color?: string; dimColor?: boolean } =>
@@ -294,25 +294,40 @@ function broadcastSection(ctx: Ctx, hive: HiveInfo): RenderElement[] {
   return rows
 }
 
+/**
+ * The Hive-Mind's action menu, at the top of the page in its own frame: spawn a worker, a specialist or a scout, and the
+ * propose and broadcast fields. Every one asks y/n first and then runs one ruflo command; voting sits with the proposals it
+ * applies to. Boxed and labelled so it reads as the page's menu.
+ */
 function actSection(ctx: Ctx, hive: HiveInfo): RenderElement[] {
   const block = proposeBlock(hive)
-  const rows: RenderElement[] = [rule(ctx, 'Act', 'each asks y/n, then runs one ruflo command')]
   const Input = ctx.kit.Input
+  const run = (id: string) => () => void ctx.act.run(id)
+  const inner: RenderElement[] = [
+    row(ctx, [ctx.kit.Text({ bold: true, color: THEME.ok, children: ' ACT ' }), ctx.kit.Text({ dimColor: true, children: ' each asks y/n, then runs one ruflo command' })], 'hive-act-title'),
+    row(
+      ctx,
+      [
+        ctx.kit.Button({ key: 'hive-spawn-worker', label: ' ✚ Spawn worker (s) ', hotkey: 's', onPress: run('hive-spawn-worker'), variant: 'primary' }),
+        ctx.kit.Button({ key: 'hive-spawn-specialist', label: ' ◆ Specialist ', onPress: run('hive-spawn-specialist') }),
+        ctx.kit.Button({ key: 'hive-spawn-scout', label: ' ▲ Scout ', onPress: run('hive-spawn-scout') }),
+        ctx.kit.Text({ dimColor: true, children: hive.pending.length > 0 ? '  vote on the proposals below ↓' : '  no proposal to vote on yet' }),
+      ],
+      'hive-act-menu',
+    ),
+  ]
 
   if (Input === undefined) {
-    rows.push(text(ctx, 'propose and broadcast from the palette: p → "propose design: use raft", "broadcast hello"', { dimColor: true }))
+    inner.push(text(ctx, ' propose and broadcast from the palette: p → "propose design: use raft", "broadcast hello"', { dimColor: true }))
   } else {
-    rows.push(Input({ key: 'hive-propose', label: 'propose', placeholder: block ?? 'type: the decision (design: use raft for the console)', submitLabel: 'ask', onSubmit: value => void ctx.act.run('propose', value) }))
-    rows.push(Input({ key: 'hive-broadcast', label: 'broadcast', placeholder: 'a message for every worker', submitLabel: 'ask', onSubmit: value => void ctx.act.run('broadcast', value) }))
+    inner.push(Input({ key: 'hive-propose', label: ' ✎ propose', placeholder: block ?? 'the decision to put to the vote (design: use raft for the console)', submitLabel: 'ask', onSubmit: value => void ctx.act.run('propose', value) }))
+    inner.push(Input({ key: 'hive-broadcast', label: ' ✎ broadcast', placeholder: 'a message for every worker', submitLabel: 'ask', onSubmit: value => void ctx.act.run('broadcast', value) }))
   }
 
-  if (block !== null) rows.push(text(ctx, `propose: n/a — ${block}`, { color: THEME.warn }))
+  if (block !== null) inner.push(text(ctx, ` propose: n/a — ${block}`, { color: THEME.warn }))
 
-  if (ctx.columns >= 44) {
-    rows.push(row(ctx, [button(ctx, 'hive-spawn-worker', 'Spawn worker', () => void ctx.act.run('hive-spawn-worker'), { hotkey: 's' }), button(ctx, 'hive-spawn-specialist', 'specialist', () => void ctx.act.run('hive-spawn-specialist')), button(ctx, 'hive-spawn-scout', 'scout', () => void ctx.act.run('hive-spawn-scout'))]))
-  }
-
-  return rows
+  // The ask the ACT menu raised is drawn inside it, right under the buttons and fields that raised it.
+  return [ctx.kit.Box({ key: 'hive-act', flexDirection: 'column', borderStyle: 'round', borderColor: THEME.ok, paddingX: 1, children: [...inner, ...confirmHere(ctx, 'hive', true)] })]
 }
 
 /**
@@ -334,7 +349,7 @@ export function hiveView(ctx: Ctx): RenderElement {
 
   if (snap === null) return text(ctx, 'reading ruflo state…', { dimColor: true })
 
-  if (hive === null) return col(ctx, [rule(ctx, 'Hive-Mind', 'not initialised'), ...emptyComb(ctx)], 'hive')
+  if (hive === null) return col(ctx, [rule(ctx, 'Hive-Mind', 'not initialised'), ...emptyComb(ctx), ...confirmHere(ctx, 'hive', true)], 'hive')
 
   const members = membersOf(hive, snap.hiveAgents, snap.agents)
   const byzantine = new Set(hive.pending.flatMap(proposal => proposal.byzantine)).size
@@ -343,6 +358,7 @@ export function hiveView(ctx: Ctx): RenderElement {
     ctx,
     [
       rule(ctx, 'Hive-Mind', `${hive.topology} · ${hive.strategy ?? 'consensus n/a'} · ${members.length} in the comb${byzantine > 0 ? ` · ${byzantine} byzantine` : ''}`),
+      ...actSection(ctx, hive),
       picture(ctx, 'hive', `honeycomb needs a terminal: the queen and ${members.length} workers`),
       text(ctx, '♛ queen · ● worker ◆ specialist ▲ scout ○ in no store · brighter = busier · ballot dot: green for, pink against, · not yet · red walls ✖ byzantine · ✔ ✘ scars: decided · a wave runs to the queen for 2 s when a vote lands', { dimColor: true }),
       ...(hive.pending.length > 0 ? [rule(ctx, 'Voting chambers', `${hive.pending.length} open · for fills from the left, against from the right, ┃ the quorum lines`), picture(ctx, 'hive-chambers', `${hive.pending.length} open proposal${hive.pending.length === 1 ? '' : 's'}`)] : []),
@@ -353,7 +369,6 @@ export function hiveView(ctx: Ctx): RenderElement {
       ...workersSection(ctx, hive, members),
       ...historySection(ctx, hive),
       ...broadcastSection(ctx, hive),
-      ...actSection(ctx, hive),
     ],
     'hive',
   )

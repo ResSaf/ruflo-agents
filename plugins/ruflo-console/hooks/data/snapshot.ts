@@ -25,6 +25,8 @@ import {
 } from './facts'
 import { parseMissions, type MissionObservation } from './missions'
 import { readBounded, readDisk, textOf, type ProjectKey, type Read, type ReadCache, type ReaderFs } from './files'
+import { parseAgentdbMod, type AgentdbMod } from './agentdb-mod'
+import { readMods, type ModsFacts } from './mods'
 import {
   parseAgents,
   parseClaims,
@@ -78,6 +80,10 @@ export type Snapshot = {
   hasNostrKey: boolean | null
   plugins: PluginsFacts
   missions: MissionObservation | null
+  /** The ruflo-agentdb mod's own status file (ADR-445); null while the mod has not written one. */
+  agentdbMod: AgentdbMod | null
+  /** Every `.claude-flow/<short>-mod/status.json` the per-plugin mods wrote (ADR-446), bounded and shape-checked. */
+  mods: ModsFacts
   changed: number
   readAtMs: number
 }
@@ -87,8 +93,8 @@ export type ReadStatus = 'ok' | 'missing' | 'too-large' | 'refused'
 const statusOf = (read: Read): ReadStatus => (read.text !== null ? 'ok' : read.reason)
 
 /** Reads and parses everything; never rejects. `settings` is the merged settings, for `enabledPlugins`. */
-export async function readSnapshot(fs: ReaderFs, cache: ReadCache, cwd: string, home: string | null, settings: unknown, nowMs: number, configDir?: string | null): Promise<Snapshot> {
-  const disk = await readDisk(fs, cache, cwd, home, configDir === undefined ? (home === null ? null : `${home}/.claude`) : configDir)
+export async function readSnapshot(fs: ReaderFs, cache: ReadCache, cwd: string, home: string | null, settings: unknown, nowMs: number, configDir?: string | null, federationNetwork = false): Promise<Snapshot> {
+  const disk = await readDisk(fs, cache, cwd, home, configDir === undefined ? (home === null ? null : `${home}/.claude`) : configDir, federationNetwork)
   const text = (key: ProjectKey) => textOf(disk.project[key])
   const stored = parseSwarmStore(text('swarm'))
   const pointer = parseSwarmPointer(text('pointer'))
@@ -127,6 +133,8 @@ export async function readSnapshot(fs: ReaderFs, cache: ReadCache, cwd: string, 
       missingFromClone: offered === null ? [] : EXPECTED_IN_MARKET.filter(name => !offered.includes(name)),
     },
     missions: parseMissions(text('missions')),
+    agentdbMod: parseAgentdbMod(text('agentdbMod')),
+    mods: await readMods(fs, cache, cwd),
     changed: disk.changed,
     readAtMs: nowMs,
   }

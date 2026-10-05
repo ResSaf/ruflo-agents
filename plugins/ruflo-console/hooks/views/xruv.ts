@@ -2,8 +2,8 @@ import type { RenderElement } from 'claude-code'
 
 import type { Channels, Registry, Roster } from '../data/cli'
 import type { SwarmMessages, WorkClaims } from '../data/xruv'
-import { INVITE_COMMAND, UNREGISTER_WHY, XRUV, type XEntry, type XGroup } from '../xruv'
-import { ago, button, clip, col, kv, live, row, rule, sourceLine, text, THEME, type Ctx } from './common'
+import { BBS_SERVE_COMMAND, INVITE_COMMAND, UNREGISTER_WHY, XRUV, type XEntry, type XGroup } from '../xruv'
+import { ago, button, clip, col, type Ctx, kv, live, row, rule, sourceLine, tagChip, text, THEME } from './common'
 
 /** Result lines in view at once; j/k scroll the rest. */
 export const XRUV_ROWS = 8
@@ -19,6 +19,7 @@ function rowButton(ctx: Ctx, entry: XEntry): RenderElement | null {
 
   if (entry.id === 'x-unregister' || isAdminOff) return null
   // The invite code is a bearer secret: it is minted in the terminal, where only the person reads it.
+  if (entry.id === 'x-bbs-serve') return ctx.kit.Button({ key: 'xr-x-bbs-serve', label: ' ▸ type', plain: true, dimColor: true, onPress: () => ctx.act.term.load('ruflo', BBS_SERVE_COMMAND) })
   if (entry.id === 'x-invite') return ctx.kit.Button({ key: 'xr-x-invite', label: ' ▸ type', plain: true, dimColor: true, onPress: () => ctx.act.term.load('ruflo', INVITE_COMMAND) })
   if (entry.takes !== undefined && entry.id !== 'x-join') return null
 
@@ -32,6 +33,7 @@ function rowButton(ctx: Ctx, entry: XEntry): RenderElement | null {
  */
 function pressOf(ctx: Ctx, entry: XEntry): () => void {
   if (entry.id === 'x-invite') return () => ctx.act.term.load('ruflo', INVITE_COMMAND)
+  if (entry.id === 'x-bbs-serve') return () => ctx.act.term.load('ruflo', BBS_SERVE_COMMAND)
   if (entry.takes !== undefined && entry.id !== 'x-join') return () => ctx.act.focus(`xr-in-${entry.id}`)
 
   return () => void ctx.act.run(entry.id)
@@ -47,7 +49,7 @@ function entryRow(ctx: Ctx, entry: XEntry, lead: number): RenderElement {
   return row(
     ctx,
     [
-      ctx.kit.Text({ bold: true, color: tag.color(), children: ` ${tag.text}` }),
+      tagChip(ctx, tag.text, tag.color()),
       ctx.kit.Button({ key: `xr-name-${entry.id}`, label: ` ${entry.name} `.padEnd(lead, '.'), plain: true, onPress: press }),
       ctx.kit.Button({ key: `xr-about-${entry.id}`, label: clip(` ${entry.about}`, Math.max(4, ctx.columns - lead - 18)), plain: true, dimColor: true, onPress: press }),
       ...(action === null ? [] : [action]),
@@ -71,8 +73,12 @@ function identityRows(ctx: Ctx, lead: number): RenderElement[] {
   const hasKey = state.snapshot?.hasNostrKey ?? null
   const reg = live<Registry>(state.probes.get('registry'))?.registration
   const rows: RenderElement[] = [rule(ctx, 'Identity', 'your own key · the file is never read')]
+  const confirmed = hasKey === null && state.nostrKeyVerifiedAtMs !== null
+  const present = confirmed
+    ? `confirmed by JOIN ${ago(state.nostrKeyVerifiedAtMs, ctx.nowMs)} (never read here)`
+    : 'present: ~/.ruflo/nostr.key (never read here)'
 
-  rows.push(kv(ctx, 'nostr key', hasKey === null ? 'n/a' : hasKey ? 'present: ~/.ruflo/nostr.key (never read here)' : 'none yet: JOIN makes ~/.ruflo/nostr.key', hasKey === true ? THEME.ok : undefined))
+  rows.push(kv(ctx, 'nostr key', hasKey || confirmed ? present : hasKey === null ? 'n/a' : 'none yet: JOIN makes ~/.ruflo/nostr.key', hasKey || confirmed ? THEME.ok : undefined))
   rows.push(kv(ctx, 'pubkey', state.xruv.pubkey !== null ? `${state.xruv.pubkey.slice(0, 16)}…${state.xruv.pubkey.slice(-6)}` : 'n/a — named by the next JOIN, ACCEPT or PUBLISH result'))
   rows.push(kv(ctx, 'registration', reg === undefined ? 'n/a — open or closed is in the registry (▸ fetch below)' : `${reg.isOpen ? 'open' : 'closed'}${reg.auth !== undefined ? ` · ${reg.auth}` : ''} · JOIN checks membership first and registers only if needed`, reg?.isOpen === true ? THEME.ok : undefined))
 
@@ -196,6 +202,27 @@ function adminRows(ctx: Ctx, lead: number): RenderElement[] {
   return rows
 }
 
+/** AgentBBS: rooms, envelopes and pinned peers on this machine; only SYNC reaches the network, and it asks first. */
+function agentbbsRows(ctx: Ctx, lead: number): RenderElement[] {
+  const rows: RenderElement[] = [rule(ctx, 'AgentBBS', 'rooms · envelopes · pinned peers · federation_bbs_* tools')]
+  const placeholders: Record<string, string> = {
+    'x-bbs-register': '#sales — Enter asks',
+    'x-bbs-publish': '<roomId> Status: build green — Enter asks',
+    'x-bbs-watch': '<roomId> 20 — Enter reads it',
+    'x-bbs-peer-add': '<16-hex node id> http://100.x.y.z:7777 <64-hex key> — Enter asks',
+    'x-bbs-sync': '<roomId> [nodeId] — Enter asks (network)',
+  }
+
+  for (const entry of entriesOf('agentbbs')) {
+    rows.push(entryRow(ctx, entry, lead))
+    if (entry.takes !== undefined) rows.push(field(ctx, entry, placeholders[entry.id] ?? entry.takes))
+  }
+
+  rows.push(text(ctx, ' No join-as-human row: it mints a bearer token, which the console never shows. Use the terminal for it.', { dimColor: true }))
+
+  return rows
+}
+
 /** The last board run: what it was, how it exited, what it sends, and a window of its lines. */
 function resultRows(ctx: Ctx): RenderElement[] {
   const { state, nowMs } = ctx
@@ -257,6 +284,7 @@ export function xruvView(ctx: Ctx): RenderElement {
     ...identityRows(ctx, lead),
     ...networkRows(ctx, lead),
     ...channelRows(ctx, lead),
+    ...agentbbsRows(ctx, lead),
     ...adminRows(ctx, lead),
   ]
 

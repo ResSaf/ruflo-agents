@@ -47,7 +47,7 @@ describe('self-evolution', () => {
     const { text, tree, rasters } = await drawn($, 'evolve')
     const buttons = elementsOf(tree, 'Button').map(keyOf)
 
-    expect(rasters).toEqual(['header', 'title', 'evolve-loop'])
+    expect(rasters).toEqual(['title', 'evolve-loop'])
     for (const section of ['LOOP', 'LEDGER & RECEIPTS', 'LINEAGE', 'POLICIES', 'WITNESS', 'WHAT RUNS WHERE', 'PROMOTE']) expect(text).toContain(`▓▒░ ${section} ░▒▓`)
     expect(text).toContain('dddddddd champion')
     expect(text).toContain('✗ 33333333 \nrejected \n UNSIGNED · evaluated · cccccccc → eeeeeeee')

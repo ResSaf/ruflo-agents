@@ -5,8 +5,23 @@
 import { claimTask, handoffClaim, releaseClaim, stealClaim, whyNot } from './actions'
 import { EVENT_KINDS } from './data/events'
 import { evolveActions } from './evolve'
+import { askActions } from './ask-claude'
+import { loopActions } from './loops'
+import { optimizerActions } from './optimizer'
+import { navActions } from './nav-state'
+import { roomActions } from './room'
+import { roomPages } from './views/room'
+import { watchActions } from './watch'
+import { missionActions } from './mission-control'
+import { catalogActions } from './plugin-catalog'
+import { saveAllowed } from './remember'
+import { pluginNames, settingsActions } from './settings'
+import { catalogOf } from './plugin-catalog'
 import { devtoolsActions } from './devtools'
-import { HARNESSES, harnessSpec, isLive, newSession, send, whyNotRun } from './harness'
+import { HARNESSES, harnessSpec, isAutoAccept, isLive, newSession, send, whyNotRun } from './harness'
+import { helpActions } from './help-actions'
+import { VIEW_TOPIC } from './help-docs'
+import { pluginSpec } from './plugin-ops'
 import { startSpec } from './starts'
 import { plain } from './data/parse'
 import type { Host } from './host'
@@ -15,13 +30,17 @@ import { filterPalette, paletteEntries } from './palette'
 import type { Runner } from './runner'
 import { skillActions } from './skills'
 import { moreSkillActions } from './skills-lab'
-import { PANE_ID, viewOf, type State } from './state'
+import { CLI_PREFIXES, NAV_KEY, PANE_ID, viewOf, type State } from './state'
+import { runUpdateCheck } from './update-flow'
+import { claudeActions } from './mission-claude'
+import { UPDATES_KEY } from './updates'
 import { vectorActions } from './vector'
 import type { Actions } from './views/common'
 import { openTasks, selection } from './views/select'
 
 export type Steps = {
   freshRead: () => Promise<void>
+  animate: () => void
   probe: (force?: boolean) => Promise<void>
   setView: (view: State['view']) => void
   drill: (agentId: string) => void
@@ -29,7 +48,7 @@ export type Steps = {
 }
 
 export function actionsOf(state: State, host: Host, runner: Runner, steps: Steps): Actions {
-  const { freshRead, probe, setView, drill, close } = steps
+  const { freshRead, probe, setView, drill, close, animate } = steps
 
   /**
    * After a command typed in the terminal field (/ruflo, /new, /up…) the rows above the field change, and the engine
@@ -56,14 +75,73 @@ export function actionsOf(state: State, host: Host, runner: Runner, steps: Steps
 
   const actions: Actions = {
     view: setView,
+    remember: () => {
+      const key = state.pending?.rememberKey
+
+      if (key !== undefined && state.pending !== null) {
+        state.allowed.set(key, state.pending.label)
+        saveAllowed(state, host)
+      }
+
+      void runner.confirm()
+    },
+    forget: key => {
+      if (key === '') state.allowed.clear()
+      else state.allowed.delete(key)
+      saveAllowed(state, host)
+      host.invalidate()
+    },
+    nav: style => {
+      state.nav = style
+      void host.storeSet(NAV_KEY, style).catch(() => undefined)
+      host.invalidate()
+    },
+    updates: mode => {
+      state.updates = mode
+      void host.storeSet(UPDATES_KEY, mode).catch(() => undefined)
+      host.invalidate()
+    },
+    checkUpdates: () => {
+      state.updateNote = 'checking…'
+      host.invalidate()
+      void runUpdateCheck(state, host, { force: true })
+    },
+    editField: (key, text) => {
+      state.fieldText.set(key, text)
+      host.invalidate()
+      host.after(60, () => void host.focus(PANE_ID, key).catch(() => undefined))
+    },
+    clearField: key => {
+      state.fieldText.set(key, '')
+      host.invalidate()
+    },
+    toggle: key => {
+      if (state.sections.has(key)) state.sections.delete(key)
+      else state.sections.add(key)
+      host.invalidate()
+    },
     refresh: () => {
       void freshRead().then(() => probe(true))
       // The skills lists come from `npx skills`, not the disk read: r asks for them again on that view.
       if (state.view === 'skills') actions.skills.list()
       if (state.view === 'evolve') actions.evolve.reread()
     },
+    restart: () => {
+      // The intro plays again from now (BBS look and the boot option on); the pane redraws at once, and the read starts over beneath it.
+      state.pane.bootAtMs = Date.now()
+      state.pane.menuAtMs = 0
+      host.invalidate()
+      animate()
+      actions.refresh()
+    },
     help: () => {
       state.isHelp = !state.isHelp
+      // Help opens on the guide for the page you were on (the index from the menu), with a clean question.
+      if (state.isHelp) {
+        host.scrollTop()
+        state.help.query = ''
+        state.help.topic = VIEW_TOPIC[state.view === 'agent' ? state.back : state.view] ?? null
+      }
       host.invalidate()
     },
     close: () => void close(),
@@ -107,6 +185,7 @@ export function actionsOf(state: State, host: Host, runner: Runner, steps: Steps
     palette: context => {
       state.palette = { isOpen: !state.palette.isOpen || state.palette.context !== context, query: '', index: 0, context }
       state.isHelp = false
+      if (state.palette.isOpen) host.scrollTop()
       host.invalidate()
     },
     paletteQuery: text => {
@@ -136,7 +215,8 @@ export function actionsOf(state: State, host: Host, runner: Runner, steps: Steps
       host.invalidate()
     },
     focus: key => void host.focus(PANE_ID, key).catch(() => undefined),
-    start: (id, text = '') => runner.ask(startSpec(id, Date.now(), text), id === 'mission' || id === 'task' ? 'type it first (it may not start with -)' : 'that start cannot run here'),
+    plugin: op => runner.ask(pluginSpec(op), 'that cannot run here'),
+    start: (id, text = '') => runner.ask(startSpec(id, Date.now(), text, present => { state.nostrKeyVerifiedAtMs = present ? Date.now() : null }), id === 'mission' || id === 'task' ? 'type it first (it may not start with -)' : 'that start cannot run here'),
     // The main menu's prompt, as a board's: a key (2, w, i), a name (swarm, x.ruv.io), ? for help, O to log off.
     menu: text => {
       const word = text.trim().toLowerCase()
@@ -145,7 +225,7 @@ export function actionsOf(state: State, host: Host, runner: Runner, steps: Steps
       if (word === '') return
       if (word === '?' || word === 'h' || word === 'help') actions.help()
       else if (word === 'p') actions.palette('all')
-      else if (word === 'r') actions.refresh()
+      else if (word === 'r') actions.restart()
       else if (word === 'o' || word === 'bye' || word === 'logoff') actions.close()
       else if (view !== null) setView(view)
       else runner.ask(null, `no area "${plain(word, 24)}": type a key from the menu, or ? for help`)
@@ -201,7 +281,7 @@ export function actionsOf(state: State, host: Host, runner: Runner, steps: Steps
           return
         }
 
-        if (isLive(state)) {
+        if (isLive(state) || isAutoAccept(state)) {
           const why = whyNotRun(state, text)
 
           if (why !== null) {
@@ -225,10 +305,10 @@ export function actionsOf(state: State, host: Host, runner: Runner, steps: Steps
           return
         }
 
-        state.terminal.draft = text
-
         const spec = harnessSpec(state, host, text)
 
+        // The text is in the pending ask (an empty Enter or Yes runs it): the field clears, unless it cannot be sent and stays to be fixed.
+        state.terminal.draft = spec !== null ? '' : text
         runner.ask(spec, whyNotRun(state, text) ?? 'nothing to run')
         state.terminal.asked = spec !== null ? { key, label: spec.label } : null
       },
@@ -259,13 +339,45 @@ export function actionsOf(state: State, host: Host, runner: Runner, steps: Steps
         state.terminal.draft = text
         setView('terminal')
       },
+      // An ask link is the person's ask: it goes to the agent now, no Enter to confirm it. Busy or empty, it waits in the field instead.
+      ask: (id, text) => {
+        state.terminal.harness = id
+        setView('terminal')
+
+        if (whyNotRun(state, text) !== null) {
+          state.terminal.draft = text
+          host.invalidate()
+
+          return
+        }
+
+        state.terminal.draft = ''
+        send(state, host, text)
+        host.invalidate()
+      },
     },
     // ▸ edit hands the skill to the AI terminal, as x.ruv.io's ▸ open does: typed, not run.
     skills: { ...skillActions(state, host, runner, text => actions.term.load('claude', text)), ...moreSkillActions(state, host, runner, text => actions.term.load('claude', text)) },
     memory: memoryActions(state, runner, host.invalidate),
     // An rvlite query is MCP-only: it goes to the AI terminal typed, as ▸ edit does, and runs only when sent.
     vector: vectorActions(state, runner, text => actions.term.load('claude', text)),
-    evolve: evolveActions(state, host, text => actions.term.load('claude', text)),
+    evolve: evolveActions(state, host, text => actions.term.ask('claude', text)),
+    settings: settingsActions(state, host, runner, (agent, text) => actions.term.ask(agent, text), () => CLI_PREFIXES[state.options.cli], () => pluginNames(state, (catalogOf(state).plugins ?? []).filter(plugin => plugin.options.length > 0).map(plugin => plugin.name))),
+    mission: { ...missionActions(state, host, runner), ...claudeActions(state, host, runner) },
+    ask: askActions(state, host, runner, () => actions),
+    ruhelp: helpActions(state, host, runner, () => actions),
+    loops: loopActions(state, host, runner),
+    optimizer: optimizerActions(state, () => host.invalidate(), id => void runner.runById(id, ''), question => actions.ask.ask(question, 'overview')),
+    watch: watchActions(state, () => host.invalidate(), (question, view) => actions.ask.ask(question, view)),
+    room: roomActions(state, () => host.invalidate(), (id, text) => runner.runById(id, text), () => roomPages(state)),
+    navigator: navActions(state, () => host.invalidate(), view => actions.view(view)),
+    catalog: catalogActions(state, host, runner, text => actions.term.load('claude', text)),
+    control: {
+      pause: on => {
+        state.control.paused = on
+        host.invalidate()
+      },
+    },
     devtools: devtoolsActions(state, host, runner.runById, why => runner.ask(null, why)),
   }
 

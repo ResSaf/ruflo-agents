@@ -12,6 +12,7 @@ import { numberOf, plain, recordOf } from './data/parse'
 import { labLines } from './mh-lab'
 import type { State } from './state'
 
+const PRETRAIN_NOTE = 'local compute that reads the repository and writes the intelligence store (patterns, no model calls)'
 const TRAIN_NOTE = 'local compute, seconds to minutes; writes .claude-flow/neural (patterns.json and a checkpoint); no model calls'
 
 /** `coordination 50`: a pattern type, then epochs from 1 to 500 (default 20). */
@@ -71,6 +72,18 @@ export function routeSpec(text: string): ActionSpec | null {
   return task === null ? null : autoSpec('nn-route', `which agent for "${task.slice(0, 40)}"`, 'read', ['hooks', 'route', '--task', task, '--format', 'json'], { read: routeRead })
 }
 
+export function patternSearchSpec(text: string): ActionSpec | null {
+  const query = freeText(text, 300)
+
+  return query === null ? null : autoSpec('nn-pattern-search', `search patterns for "${query.slice(0, 40)}"`, 'read', tool('hooks_intelligence_pattern-search', { query, topK: 5 }))
+}
+
+export function patternStoreSpec(text: string): ActionSpec | null {
+  const pattern = freeText(text, 300)
+
+  return pattern === null ? null : autoSpec('nn-pattern-store', `store the pattern "${pattern.slice(0, 40)}"`, 'local', tool('hooks_intelligence_pattern-store', { pattern, type: 'general' }), { note: 'local; adds one pattern to the ReasoningBank (HNSW-indexed) the router and recall read' })
+}
+
 export function explainSpec(text: string): ActionSpec | null {
   const task = freeText(text, 300)
 
@@ -90,6 +103,10 @@ export function neuralEntries(state: State): AutoEntry[] {
     ['nn-patterns', 'neural patterns: the stored patterns, their confidence and use', autoSpec('nn-patterns', 'neural patterns', 'read', ['neural', 'patterns', '--action', 'list'])],
     ['nn-analyze', 'neural optimize --method analyze: pattern memory by component', autoSpec('nn-analyze', 'pattern memory analysis', 'read', ['neural', 'optimize', '--method', 'analyze'])],
     ['nn-intel', 'hooks intelligence stats: SONA, MoE, EWC++, LoRA and the router', autoSpec('nn-intel', 'intelligence stats', 'read', tool('hooks_intelligence_stats', {}))],
+    ['nn-pretrain-shallow', 'hooks pretrain (shallow): bootstrap intelligence from this repository, quickly', autoSpec('nn-pretrain-shallow', 'pretrain from the repository (shallow)', 'local', tool('hooks_pretrain', { depth: 'shallow' }), { note: PRETRAIN_NOTE, timeoutMs: 300_000 })],
+    ['nn-pretrain-medium', 'hooks pretrain (medium): the default depth', autoSpec('nn-pretrain-medium', 'pretrain from the repository (medium)', 'local', tool('hooks_pretrain', { depth: 'medium' }), { note: PRETRAIN_NOTE, timeoutMs: 600_000 })],
+    ['nn-pretrain-deep', 'hooks pretrain (deep): the whole repository, slower', autoSpec('nn-pretrain-deep', 'pretrain from the repository (deep)', 'local', tool('hooks_pretrain', { depth: 'deep' }), { note: PRETRAIN_NOTE, timeoutMs: 900_000 })],
+    ['nn-consolidate', 'agentdb consolidate: ask AgentDB to consolidate retained memories', autoSpec('nn-consolidate', 'consolidate retained memories', 'local', tool('agentdb_consolidate', {}), { note: 'local; rewrites AgentDB’s retained memories (it refuses when the bridge is unavailable)' })],
     ['nn-quantize', 'neural optimize --method quantize: patterns to Int8', autoSpec('nn-quantize', 'quantize the stored patterns to Int8', 'local', ['neural', 'optimize', '--method', 'quantize'], { note: 'local compute; rewrites the stored pattern embeddings as Int8 (about 4x smaller, slightly less exact)' })],
     ['nn-compress', 'neural_compress quantize: compress the neural store', autoSpec('nn-compress', 'compress the neural store (quantize)', 'local', tool('neural_compress', { method: 'quantize' }), { note: 'local compute; rewrites the neural store in .claude-flow/neural (needs memory init first)' })],
   ]
@@ -100,6 +117,8 @@ export function neuralEntries(state: State): AutoEntry[] {
   }
 
   out.push({ id: 'nn-train', group: 'neural', label: 'nn-train <pattern> [epochs]: train neural patterns', make: text => trainSpec(state, text) })
+  out.push({ id: 'nn-pattern-search', group: 'neural', label: 'nn-pattern-search <query>: search the stored patterns by meaning', make: patternSearchSpec })
+  out.push({ id: 'nn-pattern-store', group: 'neural', label: 'nn-pattern-store <text>: store a pattern in the ReasoningBank', make: patternStoreSpec })
   out.push({ id: 'nn-route', group: 'neural', label: 'nn-route <task>: which agent for this task?', make: routeSpec })
   out.push({ id: 'nn-explain', group: 'neural', label: 'nn-explain <task>: why the router picks that agent', make: explainSpec })
   out.push({ id: 'nn-predict', group: 'neural', label: 'nn-predict <text>: the trained models’ top predictions', make: predictSpec })

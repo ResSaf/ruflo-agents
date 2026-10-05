@@ -1,7 +1,9 @@
 import type { RenderElement } from 'claude-code'
 
 import { LAB, LAB_GROUPS, labSpec, PROMOTE_COMMAND, type LabCost, type LabEntry } from '../mh-lab'
-import { ago, button, clip, row, rule, text, THEME, type Ctx } from './common'
+import { slot } from './attention'
+import { sendResultRow } from './secure'
+import { ago, button, clip, type Ctx, row, rule, section, tagChip, text, THEME } from './common'
 
 /** Result lines in view at once; j/k scroll the rest. */
 export const LAB_ROWS = 14
@@ -24,7 +26,7 @@ function entryRow(ctx: Ctx, entry: LabEntry, lead: number): RenderElement {
   return row(
     ctx,
     [
-      ctx.kit.Text({ bold: true, color: tag.color(), children: ` ${tag.text}` }),
+      tagChip(ctx, tag.text, tag.color()),
       ctx.kit.Text({ bold: true, color: entry.cost === 'spends' ? THEME.warn : THEME.head, children: ` ${entry.name} `.padEnd(lead, '.') }),
       ctx.kit.Text({ color: THEME.info, dimColor: isBlocked, wrap: 'truncate-end', children: clip(` ${entry.about}`, Math.max(4, ctx.columns - lead - 18)) }),
       // A verb that needs a path types its command into the terminal, which asks before it runs.
@@ -71,7 +73,9 @@ function resultRows(ctx: Ctx): RenderElement[] {
     )
   }
 
-  return rows
+  rows.push(sendResultRow(ctx, 'lab-send'))
+
+  return slot(ctx, rows)
 }
 
 /**
@@ -82,18 +86,32 @@ export function labRows(ctx: Ctx): RenderElement[] {
   const lead = Math.max(14, Math.min(19, ctx.columns - 40))
   const rows: RenderElement[] = []
 
+  // Each group folds: the read-only inspect verbs open, the groups that write or spend fold away, each header naming its cost.
   for (const group of LAB_GROUPS) {
-    rows.push(rule(ctx, group.title, group.right))
+    const entries = LAB.filter(candidate => candidate.group === group.id)
 
-    for (const entry of LAB.filter(candidate => candidate.group === group.id)) rows.push(entryRow(ctx, entry, lead))
+    rows.push(...section(ctx, `mh-${group.id}`, group.title, `${entries.length} · ${group.right}`, entries.map(entry => entryRow(ctx, entry, lead)), group.id === 'inspect'))
   }
 
   rows.push(text(ctx, ' $0 read, runs at once · wr writes · cpu minutes of local work · $$ may spend: each of these asks, its cost on the confirm row', { dimColor: true }))
   rows.push(...resultRows(ctx))
-  rows.push(rule(ctx, 'Promote', 'a policy act · never from this pane'))
-  rows.push(text(ctx, ' Promotion needs a receipt id, an approved Ed25519 public key and --confirm, and passes the policy gate:', { color: THEME.info }))
-  rows.push(text(ctx, `   ${PROMOTE_COMMAND}`, { bold: true, color: THEME.warn }))
-  rows.push(text(ctx, ' Review the receipt (▸ RECEIPTS), then run it yourself in a terminal. The console proposes and evaluates; it never promotes.', { dimColor: true }))
+  rows.push(
+    ...section(
+      ctx,
+      'mh-promote',
+      'Promote',
+      'a policy act · never from this pane',
+      [
+        text(ctx, ' Promotion needs a receipt id, an approved Ed25519 public key and --confirm, and passes the policy gate:', { color: THEME.info }),
+        text(ctx, `   ${PROMOTE_COMMAND}`, { bold: true, color: THEME.warn }),
+        text(ctx, ' Review the receipt (▸ RECEIPTS), then run it yourself in a terminal. The console proposes and evaluates; it never promotes.', { dimColor: true }),
+      ],
+      false,
+    ),
+  )
 
   return rows
 }
+
+/** This lab's result block alone: the pane asks for it to place under the row that was clicked. */
+export const labResult = (ctx: Ctx): RenderElement[] => resultRows(ctx)

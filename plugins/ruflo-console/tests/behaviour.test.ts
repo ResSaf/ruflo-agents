@@ -3,7 +3,7 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 import { RUFLO_FILES } from './fixtures/ruflo-run'
 import { BAND, command, elementsOf, fakeRuflo, keyOf, paneAt, PLUGIN, SESSION, textOf, worldOf } from './fixtures/world'
 
-const VIEWS = ['overview', 'swarm', 'claims', 'federation', 'plugins', 'learning', 'metaharness', 'memory', 'cost', 'timeline', 'approvals', 'events', 'agent'] as const
+const VIEWS = ['overview', 'swarm', 'claims', 'federation', 'plugins', 'learning', 'metaharness', 'memory', 'cost', 'timeline', 'approvals', 'events', 'room', 'agent'] as const
 
 describe('behaviour', () => {
   test('with the default bbs look, a freshly opened pane plays the boot screen first, and draws nothing else under it', async ($, on) => {
@@ -20,12 +20,12 @@ describe('behaviour', () => {
     await pane.unmount()
   })
 
-  test('the selected tab always names itself, however long the name: [7: 🔬 METAHARNESS], [🧰 SKILLS]', { options: { boot: false } }, async ($, on) => {
+  test('the selected tab always names itself, however long the name: [8: 🔬 METAHARNESS], [z: 🧰 SKILLS]', { options: { boot: false } }, async ($, on) => {
     worldOf(on, RUFLO_FILES)
     mock.clock(on)
     await $.session.start(SESSION)
 
-    for (const [view, tab] of [['metaharness', '[7: 🔬 METAHARNESS]'], ['skills', '[🧰 SKILLS]'], ['menu', '[0: 📟 MAIN MENU]'], ['federation', '[4: 🌐 FEDERATION]']] as const) {
+    for (const [view, tab] of [['metaharness', '[8: 🔬 METAHARNESS]'], ['skills', '[z: 🧰 SKILLS]'], ['menu', '[0: 📟 MAIN MENU]'], ['federation', '[5: 🌐 FEDERATION]']] as const) {
       await $.command.run(command(view))
 
       const pane = await $.ui.mount({ ...paneAt(110), plugin: PLUGIN })
@@ -165,7 +165,7 @@ describe('behaviour', () => {
       expect(elementsOf(tree, 'Raster').length === 0).toBe(isNarrow)
       expect(elementsOf(tree, 'Button').map(keyOf).includes('claim')).toBe(!isNarrow)
       // The count is VIEWS.length, which grows with each view: hold the position and the name, not the total.
-      if (isNarrow) expect(textOf(tree)).toMatch(/5\/\d+ Claims/)
+      if (isNarrow) expect(textOf(tree)).toMatch(/6\/\d+ Claims/)
       await pane.unmount()
     }
   })
@@ -246,7 +246,8 @@ describe('behaviour', () => {
     const band = textOf(await $.ui.render(BAND)).replace(/\n/g, '')
 
     // Urgent first, then what is happening now (a fresh event), then the standing context.
-    expect(band).toContain('ruflo · 3 to approve (q) · ⚠ 1 alert · router picked tester (60%) · 0s ago · 2 claims')
+    expect(band).toContain('ruflo · 3 to approve (q) · ⚠ 1 alert · router picked tester (60%) · 0s ago')
+    expect(band).toContain('2 claims (1 stealable)')
     expect(band).not.toMatch(/0\/\d+ busy|\d patterns/)
     expect(band).toContain('open console')
     expect(textOf(await $.ui.render({ ...BAND, props: { ...BAND.props, hasSurvey: true } }))).toBe('engine')
@@ -324,7 +325,7 @@ describe('behaviour', () => {
 
     const pane = await $.ui.mount({ ...paneAt(98, 12), plugin: PLUGIN })
 
-    expect(elementsOf(await pane.drawn(), 'Raster').map(keyOf).slice(0, 2)).toEqual(['header', 'title'])
+    expect(elementsOf(await pane.drawn(), 'Raster').map(keyOf).slice(0, 1)).toEqual(['title'])
     await pane.unmount()
   })
 })

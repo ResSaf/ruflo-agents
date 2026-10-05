@@ -50,9 +50,15 @@ User --> Ruflo (CLI/MCP) --> Router --> Swarm --> Agents --> Memory --> LLM Prov
 
 ---
 
-![The ruflo console inside Claude Code: swarm topology, claims, approvals, missions, events and more](docs/assets/ruflo-console-tour.gif)
+<p align="center"><img src="docs/assets/ruflo-console-walkthrough.gif" alt="A walkthrough of the ruflo console inside Claude Code in a near-square frame: the whole boot (the neon sign in its border, the ruvector constellation, every area checked), the main menu entering and its cards folding, then twenty-odd pages one after another (Swarm, Federation, Sandbox, Cost, Memory, Dev Tools and more), the command palette, ruHelp, settings and refresh"></p>
 
-<sub>The <code>/ruflo</code> console running in Claude Code (Claude on the left, the cockpit on the right): agents spawned and tasks created from the prompt show up live in the swarm, claims and memory views. <code>npx ruflo init</code>, restart Claude Code, then <code>/ruflo</code>.</sub>
+<sub>The <code>/ruflo</code> console running in Claude Code, shown in a compact, near-square frame (the cockpit docked beside Claude, cropped to the cockpit) so it reads on a phone as well as a desktop: the whole boot (the neon sign in its border, the ruvector constellation lit by what is really installed, every area checked, an easter egg), the main menu entering and its cards folding, the grouped nav, a quick tour of twenty-odd pages (the Swarm topology, the Federation map, the Sandbox page for tmux, RVF and RVM, Cost, Memory, Dev Tools and more), the command palette (a tag on every entry for what it does), <b>ruHelp</b> (built-in help: ask a question, get steps with buttons; a guide for every capability), settings and refresh. A <a href="docs/assets/ruflo-console-walkthrough-wide.gif">wide-display walkthrough</a> shows the same console with room for every label. <code>npx ruflo init</code>, restart Claude Code, then <code>/ruflo</code>.</sub>
+
+**Let Claude drive the console.** The console can also be driven *by* Claude: with control turned on (Settings → Claude control), Claude gets four tools (`console_state`, `console_open`, `console_set`, `console_run`) and sets up a mission, opens the Learning Lab or Security page, or runs a palette entry, while the cockpit shows it happening. How far it may go is your setting (`read`, `write`, `manage`, `full`: an action above the level is refused and nothing runs) and whether it waits for your Yes (`ask`) or confirms itself (`auto`). Overview shows a live log of every action and a **Take back control** button that stops all of it at once. It is off by default. See [ADR-444](v3/docs/adr/ADR-444-claude-controls-the-console.md).
+
+<p align="center"><img src="docs/assets/ruflo-console-claude-control.gif" alt="Claude Code with the ruflo console beside it: Claude sets a mission goal, creates the mission and opens the Learning, Security and Overview pages through the console tools; the Claude control dashboard logs each action; swarm-stop is refused because it needs the full level; the person clicks Take back control and the next request is refused"></p>
+
+<sub>A real recording (Claude Haiku, a few cents): control set to <code>write</code> with auto-confirm. Setting a goal and creating the mission is within that level; stopping a swarm needs <code>full</code>, so it is refused; after <b>Take back control</b> every call is refused.</sub>
 
 **Install the mods from the ruflo marketplace** (Claude Code 2.1.287 or later; mods run with your account's permissions and are not sandboxed, so read the code first):
 
@@ -63,7 +69,7 @@ User --> Ruflo (CLI/MCP) --> Router --> Swarm --> Agents --> Memory --> LLM Prov
 /reload-plugins
 ```
 
-`ruflo-console` is the cockpit above, `ruflo-mods` routes prompts and enforces policy in-process, `ruflo-swarm` shows the swarm in a pane, and `ruflo-ruos` adds the ruOS status segment. Open `/plugin` to confirm they appear in the active mods line.
+`ruflo-console` is the cockpit above, `ruflo-mods` routes prompts and enforces policy in-process, `ruflo-swarm` shows the swarm in a pane, and `ruflo-ruos` adds the ruOS status segment. Open `/plugin` to confirm they appear in the active mods line. Inside the console, `/ruflo market` is the Plugin Catalog: every ruflo plugin, mod and skill with what it ships, and buttons to install, enable, disable and update (each asks first).
 
 ## Quick Start
 

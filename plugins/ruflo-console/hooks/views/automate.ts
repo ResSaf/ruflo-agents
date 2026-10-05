@@ -5,7 +5,9 @@ import { laneOf, WORKER_ABOUT, WORKER_NAMES, type WorkerName } from '../data/aut
 import type { TaskRecord } from '../data/parse'
 import type { LabCost } from '../mh-lab'
 import { neuralEntries } from '../neural'
-import { ago, button, clip, col, row, rule, text, THEME, type Ctx } from './common'
+import { slot } from './attention'
+import { loopRows } from './loops'
+import { ago, button, clip, col, type Ctx, row, rule, tagChip, text, THEME } from './common'
 import { selection } from './select'
 
 /** Result lines in view at once; j/k scroll the rest. */
@@ -25,7 +27,7 @@ export type Item = { id: string; label: string; cost: LabCost }
 export function strip(ctx: Ctx, key: string, items: readonly Item[]): RenderElement {
   return row(
     ctx,
-    items.flatMap(item => [ctx.kit.Text({ bold: true, color: TAG[item.cost].color(), children: ` ${TAG[item.cost].text}` }), ctx.kit.Button({ key: `run-${item.id}`, label: `▸ ${item.label}`, plain: true, onPress: () => void ctx.act.run(item.id) })]),
+    items.flatMap(item => [tagChip(ctx, TAG[item.cost].text, TAG[item.cost].color()), ctx.kit.Button({ key: `run-${item.id}`, label: `▸ ${item.label}`, plain: true, onPress: () => void ctx.act.run(item.id) })]),
     key,
   )
 }
@@ -71,7 +73,7 @@ export function resultRows(ctx: Ctx, prefixes: readonly string[]): RenderElement
     rows.push(row(ctx, [text(ctx, ` lines ${top + 1}-${Math.min(result.lines.length, top + RESULT_ROWS)} of ${result.lines.length} `, { dimColor: true }), button(ctx, 'res-up', 'up', () => ctx.act.select(-1), { hotkey: 'k' }), button(ctx, 'res-down', 'down', () => ctx.act.select(1), { hotkey: 'j' })]))
   }
 
-  return rows
+  return slot(ctx, rows)
 }
 
 /** One worker's light: running now (◌), failing (◐), has run (●), or never run here (○). */
@@ -284,6 +286,7 @@ export function automateView(ctx: Ctx): RenderElement {
     ctx,
     [
       ...resultRows(ctx, ['auto-']),
+      ...loopRows(ctx),
       ...workerRows(ctx),
       ...kanbanRows(ctx),
       ...workflowRows(ctx),
@@ -295,3 +298,6 @@ export function automateView(ctx: Ctx): RenderElement {
     'automate',
   )
 }
+
+/** This view's result block alone: the pane asks for it to place under the row that was clicked. */
+export const automateResult = (ctx: Ctx): RenderElement[] => resultRows(ctx, ['auto-'])

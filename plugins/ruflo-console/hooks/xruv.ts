@@ -100,6 +100,43 @@ export function admitArg(raw: string): { pubkey: string; role: 'member' | 'admin
 export const maskInvites = (line: string): string => line.replace(INVITE_ANYWHERE, 'v2.•••• (invite code, masked)')
 
 const exec = (tool: string, params: Record<string, unknown>) => ['mcp', 'exec', '-t', tool, '-p', JSON.stringify(params)] as const
+
+const ROOM_ID_RE = /^[A-Za-z0-9_.:@#/-]{1,128}$/
+const NODE_ID_RE = /^[0-9a-f]{16}$/
+const BBS_LABEL_RE = /^[A-Za-z0-9_.\-:/@# ]{1,64}$/
+
+/** `<roomId> Type: text`, as the agentbbs publish Input takes it. */
+export function bbsPublishArg(raw: string): { roomId: string; msgType: string; payload: Record<string, unknown> } | null {
+  const [first = '', ...rest] = raw.trim().split(/\s+/)
+  const message = messageArg(raw.trim().slice(first.length))
+
+  return ROOM_ID_RE.test(first) && rest.length > 0 && message !== null ? { roomId: first, ...message } : null
+}
+
+/** `<roomId> [limit]`: the room to read and how many envelopes (1-500, 20 when unsaid). */
+export function bbsWatchArg(raw: string): { roomId: string; limit: number } | null {
+  const [roomId = '', count = '20', ...extra] = raw.trim().split(/\s+/)
+  const limit = Number(count)
+
+  return ROOM_ID_RE.test(roomId) && /^\d{1,3}$/.test(count) && limit >= 1 && limit <= 500 && extra.length === 0 ? { roomId, limit } : null
+}
+
+/** `<nodeId> <url> <64-hex publicKey> [label…]`: a peer pinned out of band. */
+export function bbsPeerArg(raw: string): { nodeId: string; url: string; publicKey: string; label?: string } | null {
+  const [nodeId = '', url = '', publicKey = '', ...label] = raw.trim().split(/\s+/)
+  const name = label.join(' ')
+
+  if (!NODE_ID_RE.test(nodeId) || !/^https?:\/\/[A-Za-z0-9.-]+(:\d{1,5})?\/?$/.test(url) || !isPubkey(publicKey) || (name !== '' && !BBS_LABEL_RE.test(name))) return null
+
+  return { nodeId, url: url.replace(/\/$/, ''), publicKey: publicKey.toLowerCase(), ...(name === '' ? {} : { label: name }) }
+}
+
+/** `<roomId> [nodeId]`: the room to converge, from one pinned peer or all of them. */
+export function bbsSyncArg(raw: string): { roomId: string; nodeId?: string } | null {
+  const [roomId = '', nodeId, ...extra] = raw.trim().split(/\s+/)
+
+  return ROOM_ID_RE.test(roomId) && (nodeId === undefined || NODE_ID_RE.test(nodeId)) && extra.length === 0 ? { roomId, ...(nodeId === undefined ? {} : { nodeId }) } : null
+}
 const ago = (atMs: number | undefined, nowMs: number) => (atMs === undefined ? '' : ` · ${Math.max(0, Math.round((nowMs - atMs) / 60_000))}m ago`)
 
 /** One run's output as the result panel's lines: each read by its shape, anything else flattened, invite codes masked. */
@@ -158,7 +195,7 @@ export function ownPubkeyOf(id: string, stdout: string): string | null {
 }
 
 export type XKind = 'read' | 'write' | 'admin'
-export type XGroup = 'identity' | 'live' | 'channels' | 'admin'
+export type XGroup = 'identity' | 'live' | 'channels' | 'admin' | 'agentbbs'
 
 export type XEntry = {
   id: string
@@ -313,6 +350,62 @@ export const XRUV: readonly XEntry[] = [
     why: () => '',
   },
   {
+    id: 'x-bbs-peers', group: 'agentbbs', name: 'PEERS', about: 'the pinned peers and when each last synced', label: 'list the pinned agentbbs peers', kind: 'read',
+    spec: state => spec(state, 'x-bbs-peers', { label: 'list the pinned agentbbs peers (federation_bbs_peers)', args: exec('federation_bbs_peers', {}), expect: 'the peers and their keys', isReadOnly: true, timeoutMs: 30_000 }),
+    why: () => '',
+  },
+  {
+    id: 'x-bbs-register', group: 'agentbbs', name: 'ROOM', about: 'a room label like #sales becomes a stable room id', label: 'register an agentbbs room', kind: 'write', takes: '#sales',
+    spec: (state, text) => {
+      const roomLabel = text.trim()
+
+      return BBS_LABEL_RE.test(roomLabel) ? spec(state, 'x-bbs-register', { label: `register the agentbbs room ${roomLabel}`, args: exec('federation_bbs_register', { roomLabel }), expect: 'the room id', note: 'local, $0: writes room state under .agentbbs in this project' }) : null
+    },
+    why: () => 'type a room label such as "#sales": letters, digits and _ . - : / @ # only, 64 characters at most',
+  },
+  {
+    id: 'x-bbs-publish', group: 'agentbbs', name: 'PUBLISH', about: 'append a typed event to a room log', label: 'publish an envelope to an agentbbs room', kind: 'write', takes: '<roomId> Type: text',
+    spec: (state, text) => {
+      const arg = bbsPublishArg(text)
+
+      return arg === null ? null : spec(state, 'x-bbs-publish', { label: `publish ${arg.msgType} to room ${arg.roomId}`, args: exec('federation_bbs_publish', arg), expect: 'an envelope id and its sequence number', note: 'local, $0: appends one signed envelope to the room log; peers only see it after a sync' })
+    },
+    why: () => 'type "<roomId> Type: text", e.g. "abc123 Status: build green" (the room id comes from ROOM)',
+  },
+  {
+    id: 'x-bbs-watch', group: 'agentbbs', name: 'WATCH', about: 'the latest envelopes in a room', label: 'read recent agentbbs envelopes', kind: 'read', takes: '<roomId> [limit]',
+    spec: (state, text) => {
+      const arg = bbsWatchArg(text)
+
+      return arg === null ? null : spec(state, 'x-bbs-watch', { label: `read the last ${arg.limit} envelopes of room ${arg.roomId}`, args: exec('federation_bbs_watch', arg), expect: 'the envelopes, oldest first', isReadOnly: true, timeoutMs: 30_000 })
+    },
+    why: () => 'type "<roomId> [limit]": limit is 1 to 500, 20 when left out',
+  },
+  {
+    id: 'x-bbs-peer-add', group: 'agentbbs', name: 'PIN PEER', about: 'trust one peer by node id, URL and public key', label: 'pin an agentbbs peer', kind: 'write', takes: '<nodeId> <url> <pubkey> [label]',
+    spec: (state, text) => {
+      const arg = bbsPeerArg(text)
+
+      return arg === null ? null : spec(state, 'x-bbs-peer-add', { label: `pin peer ${arg.nodeId} at ${arg.url}`, args: exec('federation_bbs_peer_add', arg), expect: 'the peer pinned', note: 'local, $0: records the key you typed; every envelope from this peer is verified against it, and a different key for a known node is refused' })
+    },
+    why: () => 'type "<16-hex nodeId> <http(s) url> <64-hex public key> [label]": take all three from the peer own BBS IDENTITY, not from an envelope',
+  },
+  {
+    id: 'x-bbs-sync', group: 'agentbbs', name: 'SYNC ROOM', about: 'pull a room from pinned peers and merge what verifies', label: 'sync an agentbbs room from its peers', kind: 'write', takes: '<roomId> [nodeId]',
+    spec: (state, text) => {
+      const arg = bbsSyncArg(text)
+
+      return arg === null ? null : spec(state, 'x-bbs-sync', { label: `sync room ${arg.roomId} from ${arg.nodeId ?? 'every pinned peer'}`, args: exec('federation_bbs_sync', arg), expect: 'envelopes merged and dropped, per peer', note: 'network: fetches from the pinned peer URLs only; unsigned, misattributed or oversize envelopes are dropped and counted', timeoutMs: 90_000 })
+    },
+    why: () => 'type "<roomId> [nodeId]": pin a peer first (PIN PEER); with no node id every pinned peer is asked',
+  },
+  {
+    id: 'x-bbs-serve', group: 'agentbbs', name: 'SERVE', about: 'the read-only endpoint peers pull from: run it in a terminal', label: 'serve this node to peers (in the terminal)', kind: 'write',
+    // A server that stays up for hours does not fit a one-shot board run, and bindHost decides who can reach it: that is typed where the person sees it.
+    spec: () => null,
+    why: () => 'serve keeps running and binds 127.0.0.1 unless you name a tailnet bindHost: ▸ type puts the command in the terminal (i) for you to run',
+  },
+  {
     id: 'x-hub', group: 'admin', name: 'HUB PUBLISH', about: 'a broadcast signed as the gateway, not as you', label: 'publish to the x.ruv.io swarm as the gateway (admin)', kind: 'admin', takes: 'Type: text (or a JSON object)',
     spec: (state, text) =>
       admin(state, () => {
@@ -343,6 +436,9 @@ export const XRUV: readonly XEntry[] = [
     why: state => (state.xruv.hasAdminToken === true ? 'an invite code is a bearer secret, so the console never shows one: ▸ type puts "ruflo federation invite" in the terminal (i) for you to run' : ADMIN_OFF),
   },
 ]
+
+/** What the SERVE row types into the terminal: loopback by default; a tailnet bindHost is the person's to add. */
+export const BBS_SERVE_COMMAND = 'mcp exec -t federation_bbs_serve -p \'{"port":7777}\''
 
 /** What the INVITES row types into the terminal: the code then shows only in its scrollback, never in an answer. */
 export const INVITE_COMMAND = 'federation invite --ttl 604800 --uses 25'
