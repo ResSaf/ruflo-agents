@@ -1,3 +1,4 @@
+import type { AppendCondition } from './append-conditions.js';
 /**
  * V3 Memory Initializer
  * Properly initializes the memory database with sql.js (WASM SQLite)
@@ -2889,6 +2890,9 @@ export async function storeEntry(options: {
   ttl?: number;
   dbPath?: string;
   upsert?: boolean;
+  requireNative?: boolean;
+  appendOnly?: boolean;
+  appendConditions?: AppendCondition[];
   /** ADR-323: defaults to 'unknown' when omitted. */
   provenanceType?: string;
 }): Promise<{
@@ -2936,6 +2940,10 @@ export async function storeEntry(options: {
     }
   }
 
+  if (options.requireNative || options.appendConditions) {
+    return { success: false, id: '', error: 'Native memory writer required; refusing whole-image sql.js fallback' };
+  }
+
   // Fallback: raw sql.js
   const {
     key,
@@ -2945,9 +2953,10 @@ export async function storeEntry(options: {
     tags = [],
     ttl,
     dbPath: customPath,
-    upsert = false,
+    upsert: requestedUpsert = false,
     provenanceType
   } = options;
+  const upsert = requestedUpsert && !options.appendOnly;
 
   const swarmDir = getMemoryRoot();
   const dbPath = customPath ? path.resolve(customPath) : path.join(swarmDir, 'memory.db');
