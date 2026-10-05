@@ -1,4 +1,4 @@
-Updated: 2026-10-05 EDT | Version 0.1.0
+Updated: 2026-10-05 EDT | Version 0.1.1
 Created: 2026-10-05 EDT
 
 # Native conditional append for structured continuity records
@@ -7,8 +7,11 @@ This source candidate adds explicit controls to `memory store`. Existing calls r
 embedding, upsert and backend fallback behavior. It is not an installed or published capability.
 
 - `--no-embedding` avoids embedding structured records.
-- `--require-native` refuses WASM and whole-image sql.js fallback before writing a record.
-- `--append-only` never replaces active records or resurrects tombstones.
+- `--require-native` requires a native disk handle for the exact canonical file, refusing
+  in-memory, wrong-file, WASM and whole-image sql.js fallback record writes.
+- `--append-only` requires native storage and never replaces active records or resurrects
+  tombstones. Its logical-slot check and insert share an immediate transaction, including on
+  legacy tables without a UNIQUE constraint.
 - `--append-conditions '<JSON array>'` requires both native and append-only controls. One to eight
   predicates run inside the same native immediate transaction as the record insertion.
 

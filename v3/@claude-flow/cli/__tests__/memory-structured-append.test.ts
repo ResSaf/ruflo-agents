@@ -131,3 +131,34 @@ describe('withdrawn authority while an older writer is inflight', () => {
     expect(prepare('SELECT 1 FROM memory_entries WHERE key=?').get('inflight-stale-publication')).toBeUndefined();
   });
 });
+
+describe('durable backend and legacy logical-key invariants', () => {
+  it('refuses a native in-memory or wrong-file handle before writing a record', async () => {
+    const ephemeral = new Database(':memory:');
+    __setMemoryBridgeRegistryForTests({ getAgentDB: () => ({ database: ephemeral, embedder: { embed } }), get: () => null });
+    expect((await append('ephemeral'))?.success).toBe(false);
+    expect(ephemeral.prepare("SELECT 1 FROM memory_entries WHERE key='ephemeral'").get()).toBeUndefined();
+    ephemeral.close();
+    const otherPath = join(root, 'different-file.db'); const other = new Database(otherPath);
+    __setMemoryBridgeRegistryForTests({ getAgentDB: () => ({ database: other, embedder: { embed } }), get: () => null });
+    expect((await append('wrong-file'))?.success).toBe(false);
+    expect(other.prepare("SELECT 1 FROM memory_entries WHERE key='wrong-file'").get()).toBeUndefined();
+    other.close();
+  });
+  it('rejects duplicate and tombstoned logical slots on a legacy table without a UNIQUE constraint', async () => {
+    const legacyPath = join(root, 'legacy.db'); const legacy = new Database(legacyPath);
+    // CTAS deliberately drops every UNIQUE/primary-key constraint while preserving the shape.
+    legacy.exec(`ATTACH DATABASE '${dbPath.replaceAll("'", "''")}' AS original;
+      CREATE TABLE memory_entries AS SELECT * FROM original.memory_entries;
+      CREATE TABLE vector_indexes AS SELECT * FROM original.vector_indexes; DETACH DATABASE original;`);
+    __setMemoryBridgeRegistryForTests({ getAgentDB: () => ({ database: legacy, embedder: { embed } }), get: () => null });
+    const write = (key: string) => bridgeStoreEntry({ key, value: 'changed', namespace: 'fixture', dbPath: legacyPath,
+      generateEmbeddingFlag: false, requireNative: true, appendOnly: true });
+    expect((await write('new'))?.success).toBe(false);
+    expect((await write('historical-vector'))?.success).toBe(false);
+    expect(legacy.prepare("SELECT count(*) AS count FROM memory_entries WHERE key='new'").get()).toEqual({ count: 1 });
+    expect((await write('new-legacy-slot'))?.success).toBe(true);
+    expect((await write('new-legacy-slot'))?.success).toBe(false);
+    legacy.close();
+  });
+});

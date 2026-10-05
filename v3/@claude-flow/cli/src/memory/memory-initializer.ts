@@ -2907,6 +2907,10 @@ export async function storeEntry(options: {
    *  be produced — the row is stored without a vector. */
   embeddingError?: string;
 }> {
+  if (options.appendOnly && !options.requireNative) {
+    return { success: false, id: '', error: 'Immutable append requires a native writer' };
+  }
+
   // ADR-323: validate before touching either backend so an invalid value
   // gets one clear error instead of a raw SQLite CHECK-constraint failure
   // from whichever path (bridge vs sql.js) happens to run.

@@ -1079,10 +1079,15 @@ export async function bridgeStoreEntry(options: {
   const ctx = getDb(registry);
   if (!ctx) return null;
 
+  if (options.appendOnly && !options.requireNative) {
+    return { success: false, id: '', error: 'Immutable append requires a native writer' };
+  }
   if (options.appendConditions && (!options.requireNative || !options.appendOnly)) {
     return { success: false, id: "", error: "Conditional append requires native append-only storage" };
   }
-  if (options.requireNative && (ctx.agentdb?.isWasm === true || typeof ctx.db.inTransaction !== 'boolean' || typeof ctx.db.transaction !== "function")) {
+  if (options.requireNative && (ctx.agentdb?.isWasm === true || typeof ctx.db.inTransaction !== 'boolean'
+    || typeof ctx.db.transaction !== 'function' || ctx.db.memory !== false || typeof ctx.db.name !== 'string'
+    || !ctx.db.name || canonicalDbPath(ctx.db.name) !== canonicalDbPath(options.dbPath))) {
     return { success: false, id: '', error: 'Native memory writer required; refusing non-native bridge driver' };
   }
 
@@ -1209,9 +1214,14 @@ export async function bridgeStoreEntry(options: {
 
     let runResult;
     try {
-      runResult = options.appendConditions
+      runResult = options.appendOnly
         ? ctx.db.transaction(() => {
-            assertAppendConditions(ctx.db, validateAppendConditions(options.appendConditions));
+            // Legacy native tables may predate UNIQUE(namespace,key). Serialize the exact
+            // logical-slot check with INSERT, including tombstones, instead of trusting DDL.
+            if (ctx.db.prepare('SELECT key FROM memory_entries WHERE namespace = ? AND key = ?').all(namespace, key).length) {
+              throw new AppendConditionFailed('immutable append rejected: logical key already exists');
+            }
+            if (options.appendConditions) assertAppendConditions(ctx.db, validateAppendConditions(options.appendConditions));
             return insert();
           }).immediate()
         : insert();
