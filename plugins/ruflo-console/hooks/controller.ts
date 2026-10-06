@@ -7,8 +7,11 @@ import { actionsOf } from './bindings'
 import type { Catalog } from './data/catalog'
 import { PROBES, probeArgv, probeError, probeReady, type ProbeResult } from './data/cli'
 import { ALL_COST_PROBES as COST_PROBES } from './data/cost-probes'
+import { memmapProbe } from './data/memmap'
+import { memoryHealthProbe } from './data/memory-health'
 import { X_PROBES } from './data/xruv'
 import { diffEvents, record } from './data/events'
+import { agentName, announceChanges, factsOf, segmentOf } from './notices'
 import { plain } from './data/parse'
 import { readSnapshot } from './data/snapshot'
 import { markPicture } from './gfx/pictures'
@@ -27,12 +30,12 @@ import { BOOT_MIN_MS, CLI_PREFIXES, isBooting, NAV_KEY, NAV_STYLES, PANE_ID, pus
 import type { Actions } from './views/common'
 import { picturesOf } from './views/frames'
 import { pulseDue } from './pulse'
+import { refreshWorkflows } from './wf-live'
 
 const ACTIVITY_BUCKET_MS = 5_000
 const PANE_WATCH_MS = 1_000
 const MAX_PARALLEL_PROBES = 2
-/** The CLI probes and the x.ruv.io board's two network reads, one cadence and one option gate for all. */
-const ALL_PROBES = [...PROBES, ...X_PROBES, ...COST_PROBES]
+const ALL_PROBES = [...PROBES, ...X_PROBES, ...COST_PROBES, memmapProbe, memoryHealthProbe] // CLI probes, the x.ruv.io board's network reads, cost, the memory map's list: one cadence and option gate
 const BAR_FRESH_MS = 10_000
 const IDLE_REFRESH_MS = 30_000
 const TOOLS_RECOUNT_MS = 30_000
@@ -62,19 +65,6 @@ export type Controller = {
   /** Blits the band's mark while Claude works; the band calls it with its requestId. */
   markFrame: (requestId: string, isWorking: boolean) => void
 }
-
-/** With the band off, the console's words ride ruflo-mods' status line instead: claims and a stale marketplace only. */
-export function segmentOf(state: State): string | null {
-  const claims = state.snapshot?.claims ?? []
-  const parts = [claims.length > 0 ? `${claims.length} claims` : '', state.snapshot?.plugins.missingFromClone.length ? 'marketplace stale' : ''].filter(Boolean)
-
-  return parts.length === 0 ? null : parts.join(' · ')
-}
-
-const sorted = (values: readonly number[]) => [...values].sort((a, b) => a - b)
-
-export const median = (values: readonly number[]) => sorted(values)[Math.floor(values.length / 2)] ?? 0
-export const p95 = (values: readonly number[]) => sorted(values)[Math.min(values.length - 1, Math.floor(values.length * 0.95))] ?? 0
 
 export function createController(state: State, host: Host): Controller {
   let activityCount = 0
@@ -135,8 +125,13 @@ export function createController(state: State, host: Host): Controller {
       const now = Date.now()
       const snapshot = await readSnapshot(host.fs, state.cache, state.cwd, state.home, settings, now, state.configDir, state.options.federationNetwork)
       if (snapshot.hasNostrKey === false) state.nostrKeyVerifiedAtMs = null
+      // What changed since the last read is announced on the band (the first read announces nothing).
+      const before = previous === null ? null : factsOf(state, now)
+
       state.snapshot = snapshot
       record(state.events, diffEvents(previous, snapshot, now))
+
+      if (before !== null) announceChanges(state, before, now)
 
       if (route !== null && route.agent !== state.ruflo.route?.agent) record(state.events, [{ atMs: now, kind: 'learning', text: `router picked ${route.agent} (${Math.round(route.confidence * 100)}%)` }])
 
@@ -334,6 +329,7 @@ export function createController(state: State, host: Host): Controller {
         lastIdleMs = now
         void refresh().then(() => {
           void probe()
+          void refreshWorkflows(state, host)
           advance(state, host)
         })
       }
@@ -487,7 +483,7 @@ export function createController(state: State, host: Host): Controller {
     push(list, { atMs: Date.now(), tool: plain(tool, 40) }, 200)
     state.toolsByAgent.set(who, list)
     if (state.toolsByAgent.size > 50) state.toolsByAgent.delete(state.toolsByAgent.keys().next().value as string)
-    record(state.events, [{ atMs: Date.now(), kind: 'tools', text: `${who === 'main' ? 'claude' : who}: ${plain(tool, 40)}` }])
+    record(state.events, [{ atMs: Date.now(), kind: 'tools', text: `${agentName(state, agentId)}: ${plain(tool, 40)}` }])
   }
 
   const closedByPerson = () => {

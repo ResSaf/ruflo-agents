@@ -11,9 +11,9 @@ step() { printf "→ %s ... " "$1"; }
 ok()   { printf "PASS\n"; PASS=$((PASS+1)); }
 bad()  { printf "FAIL: %s\n" "$1"; FAIL=$((FAIL+1)); }
 
-step "1. plugin.json declares ruflo-console 0.33.20"
+step "1. plugin.json declares ruflo-console 0.34.1"
 grep -q '"name": "ruflo-console"' "$ROOT/.claude-plugin/plugin.json" \
-  && grep -q '"version": "0.33.20"' "$ROOT/.claude-plugin/plugin.json" && ok || bad "name/version"
+  && grep -q '"version": "0.34.1"' "$ROOT/.claude-plugin/plugin.json" && ok || bad "name/version"
 
 step "2. hooks.json names exactly one module and no classic hook commands"
 grep -q '"modules": \["./register.ts"\]' "$HOOKS/hooks.json" && ! grep -q '"command"' "$HOOKS/hooks.json" \
@@ -27,15 +27,16 @@ step "4. no import reaches outside the plugin folder"
 deep=$(grep -rnE "from ['\"](\.\./){3,}" "$HOOKS" || true)
 [[ -z "$deep" ]] && ok || bad "$deep"
 
-step "5. the module's one network call is the update check's GET (\$.http in register.ts fetchText, used by update-flow.ts alone), and \$ is touched in register.ts only"
+step "5. the module's network calls are two: the update check's GET (\$.http in register.ts fetchText, used by update-flow.ts alone) and the conversation bridge's send (ADR-465: host.httpSend, used by data/wf-send.ts and wf-convo-live.ts alone, behind a confirm card), and \$ is touched in register.ts only"
 # Code lines only: comments may name the calls they explain.
 http=$(grep -rnE '\$\.http\.' "$HOOKS" | grep -vE '^[^:]+:[0-9]+:\s*(\*|//|/\*)' || true)
 # Exactly one is allowed (ADR-429): it goes through the engine, so an administrator's policy can refuse it, and nothing but update-flow.ts calls fetchText.
-extra=$(printf '%s\n' "$http" | grep . | grep -vE '/register\.ts:[0-9]+: *const response = await \$\.http\.fetch\(url\)$' || true)
+extra=$(printf '%s\n' "$http" | grep . | grep -vE '/register\.ts:[0-9]+: *const response = await \$\.http\.fetch\(url(, init)?\)$' || true)
 count=$(printf '%s\n' "$http" | grep -c . || true)
+sends=$(grep -rlE '\bhttpSend\b' "$HOOKS" | grep -vE '/(host|register|data/wf-send|wf-convo-live)\.ts$' || true)
 users=$(grep -rlE '\bfetchText\b' "$HOOKS" | grep -vE '/(host|register|update-flow)\.ts$' || true)
 outside=$(grep -rnE '\$\.(fs|process|ui|clock|store|env|ruflo|tool|session|settings|command)\.' "$HOOKS" | grep -vE '^[^:]+:[0-9]+:\s*(\*|//|/\*)' | grep -v '/register.ts:' || true)
-[[ -z "$extra" && "$count" == "1" && -z "$users" && -z "$outside" ]] && ok || bad "http: $http fetchText used by: $users outside: $outside"
+[[ -z "$extra" && "$count" == "2" && -z "$users" && -z "$sends" && -z "$outside" ]] && ok || bad "http: $http fetchText used by: $users httpSend used by: $sends outside: $outside"
 
 step "6. never runs plugins list or verify (network); roster, registry, claims and sync are the network probes, all behind the federationNetwork option"
 cmds=$(grep -nE "args: \['(plugins|verify)'" "$HOOKS/data/cli.ts" || true)
@@ -70,12 +71,13 @@ step "11. every source file is under 500 lines"
 long=$(find "$HOOKS" "$ROOT/tests" "$ROOT/scripts" -name '*.ts' -not -path '*/fixtures/ruflo-run.ts' -exec awk 'END { if (NR > 500) print FILENAME }' {} \;)
 [[ -z "$long" ]] && ok || bad "$long"
 
-step "12. kit tests are in the CI baseline (root vitest cannot resolve claude-code/testing)"
+step "12. kit tests are off the root vitest run (it cannot resolve claude-code/testing): in the CI baseline or the excluded list"
 miss=""
 for f in "$ROOT"/tests/*.test.ts; do
-  grep -qx "plugins/ruflo-console/tests/$(basename "$f")" "$REPO/scripts/ci-test-baseline.txt" || miss="$miss $(basename "$f")"
+  name="plugins/ruflo-console/tests/$(basename "$f")"
+  grep -qx "$name" "$REPO/scripts/ci-test-baseline.txt" || grep -qx "$name" "$REPO/scripts/ci-test-excluded.txt" || miss="$miss $(basename "$f")"
 done
-[[ -z "$miss" ]] && ok || bad "not in baseline:$miss"
+[[ -z "$miss" ]] && ok || bad "in neither the CI baseline nor the excluded list:$miss"
 
 step "13. marketplace lists ruflo-console"
 grep -q '"name": "ruflo-console"' "$REPO/.claude-plugin/marketplace.json" && ok || bad "missing marketplace entry"

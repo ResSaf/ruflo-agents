@@ -23,6 +23,7 @@ export const VIEW_ASK: Record<ViewId, ViewAsk> = {
   missions: { default: 'Review this mission: is the plan sound, and what should I do next?' },
   overview: { default: 'Summarise the state of this ruflo project and what needs attention.', slash: 'ruflo-core:ruflo-status' },
   swarm: { default: 'Is this swarm healthy and well shaped for its work? What would you change?', slash: 'ruflo-swarm:swarm' },
+  workflows: { default: 'Read these workflow runs and the ruflo swarm: what is stuck, failing or costing the most tokens, and what should I do about it?', slash: 'ruflo-workflows:workflow' },
   hive: { default: 'Read the hive: quorum, votes and workers. What should the queen decide next?', slash: 'ruflo-swarm:swarm' },
   claims: { default: 'Which claims look stuck or unbalanced, and which should be released, handed off or stolen?' },
   federation: { default: 'Is this federation set up safely? Which peers should I trust, and what is missing?', slash: 'ruflo-federation:federation' },

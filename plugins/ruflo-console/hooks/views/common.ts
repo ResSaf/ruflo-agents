@@ -32,6 +32,7 @@ import type { UpdatesMode } from '../updates'
 import { chip, COST_CHIP } from '../menu-colors'
 import { accentOfView } from '../nav-state'
 import type { VectorActions } from '../vector'
+import type { WorkflowsActions } from '../wf-actions'
 
 export type Kit = Pick<Elements['terminal'], 'Box' | 'Text' | 'Button'> & { Raster?: Elements['terminal']['Raster']; Input?: Elements['terminal']['Input'] }
 
@@ -120,6 +121,8 @@ export type Actions = {
   checkUpdates: () => void
   /** Opens or closes a collapsible section (`<view>/<id>`). */
   toggle: (key: string) => void
+  /** The Workflows page: cursor keys, the inspector's tab, the confirm-gated ruflo agent verbs, and naming a transcript's path. */
+  workflows: WorkflowsActions
   /** Settings: the level, a plugin, an option or ruflo config change (each asks first), AI preferences, and ▸ ask claude/codex. */
   settings: SettingsActions
 }

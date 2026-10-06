@@ -180,11 +180,10 @@ describe('views', () => {
     mock.clock(on)
     await $.session.start(SESSION)
 
-    const folded = await drawn($, 'learning')
-    expect(folded.rasters).toEqual(['title', 'curve'])
-    const { text, rasters } = await drawn($, 'learning', 110, ['learn-pipeline'])
+    // The pipeline section is open by default since ADR-455 (its stages are a picture of their own); the old test clicked it open.
+    const { text, rasters } = await drawn($, 'learning', 110)
 
-    expect(rasters).toEqual(['title', 'curve', 'pipeline', 'patterns'])
+    expect(rasters).toEqual(['title', 'route', 'curve', 'pipeline-stages', 'patterns'])
     expect(text).toContain('tester 60% · keyword match')
     expect(text).toMatch(/\d+\/9 succeeded \(\d+% success rate, N=9\)/)
     expect(text).toContain('consolidate: EWC consolidations')

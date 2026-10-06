@@ -1,6 +1,8 @@
 <div align="center">
 
-[![Ruflo Banner](ruflo/assets/ruflo-small.jpeg)](https://cognitum.one/agentic-engineering)
+<a href="https://cognitum.one/agentic-engineering"><img src="ruflo/assets/ruflo-neon-flicker.gif" alt="Ruflo animated neon sign" width="100%"></a>
+
+<a href="https://www.producthunt.com/products/ruos"><img src="ruflo/assets/ruos-animated.svg" alt="ruOS — A desktop that runs itself" width="100%"></a>
 
 <!-- Try Ruflo — the 3 badges first-time visitors actually act on -->
 [![npm version (ruflo)](https://img.shields.io/npm/v/ruflo?label=npx%20ruflo&style=for-the-badge&logo=npm&color=cb3837)](https://www.npmjs.com/package/ruflo)
@@ -50,9 +52,9 @@ User --> Ruflo (CLI/MCP) --> Router --> Swarm --> Agents --> Memory --> LLM Prov
 
 ---
 
-<p align="center"><img src="docs/assets/ruflo-console-walkthrough.gif" alt="A walkthrough of the ruflo console inside Claude Code in a near-square frame: the whole boot (the neon sign in its border, the ruvector constellation, every area checked), the main menu entering and its cards folding, then twenty-odd pages one after another (Swarm, Federation, Sandbox, Cost, Memory, Dev Tools and more), the command palette, ruHelp, settings and refresh"></p>
+<p align="center"><img src="docs/assets/ruflo-console-workflows.svg" width="952" height="964" alt="An animated recording of the ruflo console inside Claude Code: the boot (the neon sign and every area checked), then the Workflows page on a sample run: phases and agents with model, tokens and time; drilling from a run into one agent's activity, log and result; search; failure triage; cost; replay and compare; the control tab with a confirm card; and the mission autopilot panel"></p>
 
-<sub>The <code>/ruflo</code> console running in Claude Code, shown in a compact, near-square frame (the cockpit docked beside Claude, cropped to the cockpit) so it reads on a phone as well as a desktop: the whole boot (the neon sign in its border, the ruvector constellation lit by what is really installed, every area checked, an easter egg), the main menu entering and its cards folding, the grouped nav, a quick tour of twenty-odd pages (the Swarm topology, the Federation map, the Sandbox page for tmux, RVF and RVM, Cost, Memory, Dev Tools and more), the command palette (a tag on every entry for what it does), <b>ruHelp</b> (built-in help: ask a question, get steps with buttons; a guide for every capability), settings and refresh. A <a href="docs/assets/ruflo-console-walkthrough-wide.gif">wide-display walkthrough</a> shows the same console with room for every label. <code>npx ruflo init</code>, restart Claude Code, then <code>/ruflo</code>.</sub>
+<sub>The <code>/ruflo</code> console running in Claude Code (the cockpit docked beside Claude, cropped to the cockpit so it reads on a phone as well as a desktop): the boot, where every area is really checked, then the <b>Workflows</b> page on a <i>sample</i> run (sample data in the real file formats, not a real session): phases and agents with their model, tokens and time, a drill-down from a run to one agent's activity, log and result, cross-level search, failure triage, cost per run, replay and compare, a control tab whose Stop and Message actions ask first, and the mission autopilot panel with its envelope and kill switch. It is an animated SVG, so it stays sharp at any width. An earlier <a href="docs/assets/ruflo-console-walkthrough-wide.gif">wide-display tour of twenty-odd console pages</a> is still available. <code>npx ruflo init</code>, restart Claude Code, then <code>/ruflo</code>.</sub>
 
 **Let Claude drive the console.** The console can also be driven *by* Claude: with control turned on (Settings → Claude control), Claude gets four tools (`console_state`, `console_open`, `console_set`, `console_run`) and sets up a mission, opens the Learning Lab or Security page, or runs a palette entry, while the cockpit shows it happening. How far it may go is your setting (`read`, `write`, `manage`, `full`: an action above the level is refused and nothing runs) and whether it waits for your Yes (`ask`) or confirms itself (`auto`). Overview shows a live log of every action and a **Take back control** button that stops all of it at once. It is off by default. See [ADR-444](v3/docs/adr/ADR-444-claude-controls-the-console.md).
 

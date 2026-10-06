@@ -1,4 +1,6 @@
 import type { PluginOptions, Timer } from 'claude-code'
+import { guardOptionsOf, type GuardOptions } from './data/wf-alerts'
+import { convoOptionsOf, type ConvoOptions } from './data/wf-targets'
 
 import { emptyAuto, type AutoState } from './data/automate'
 import type { ProbeResult } from './data/cli'
@@ -12,6 +14,8 @@ import { emptyMemoryLab, type MemoryLabState } from './memory-lab'
 import { emptyVector, type VectorState } from './data/vector'
 import type { Snapshot } from './data/snapshot'
 import type { RufloRoute, RufloSnapshot } from '../types'
+import type { Notice } from './notices'
+import { emptyWf, type WfState } from './wf-state'
 
 export const PLUGIN_NAME = 'ruflo-console'
 export const PANE_ID = 'ruflo-console'
@@ -21,7 +25,7 @@ export type NavStyle = 'auto' | 'icons' | 'brief' | 'full'
 export const NAV_STYLES: readonly NavStyle[] = ['auto', 'icons', 'brief', 'full']
 export const NAV_KEY = 'nav-style'
 
-export type ViewId = 'menu' | 'overview' | 'swarm' | 'hive' | 'claims' | 'federation' | 'plugins' | 'learning' | 'metaharness' | 'memory' | 'cost' | 'timeline' | 'approvals' | 'events' | 'room' | 'missions' | 'xruv' | 'terminal' | 'skills' | 'agent' | 'secure' | 'perf' | 'automate' | 'neural' | 'vector' | 'evolve' | 'devtools' | 'sandbox' | 'market' | 'settings'
+export type ViewId = 'menu' | 'overview' | 'swarm' | 'workflows' | 'hive' | 'claims' | 'federation' | 'plugins' | 'learning' | 'metaharness' | 'memory' | 'cost' | 'timeline' | 'approvals' | 'events' | 'room' | 'missions' | 'xruv' | 'terminal' | 'skills' | 'agent' | 'secure' | 'perf' | 'automate' | 'neural' | 'vector' | 'evolve' | 'devtools' | 'sandbox' | 'market' | 'settings'
 
 /**
  * The views in tab order, each with its hotkey and the inline height it asks for. Digits are the first nine; the three
@@ -41,6 +45,7 @@ export const VIEWS: readonly { id: ViewId; key: string; label: string; short: st
   { id: 'swarm', key: '3', label: 'Swarm', short: 'Swm', icon: '🐝', blurb: 'the swarm as ruflo wrote it: topology, agents at work, and the hive-mind votes', rows: 30 },
   { id: 'hive', key: 'b', label: 'Hive-Mind', short: 'Hiv', icon: '👑', blurb: 'the queen, her workers and their votes: quorum, fault tolerance, proposals and broadcasts', rows: 40 },
   { id: 'claims', key: '4', label: 'Claims', short: 'Clm', icon: '📌', blurb: 'who holds which task: claim, release, hand off or steal, each after a y/n confirm', rows: 30 },
+  { id: 'workflows', key: '', label: 'Workflows', short: 'Wfl', icon: '🔀', blurb: 'Claude Code workflow runs and the ruflo swarm side by side: phases, agents, tokens, and what each is doing', rows: 34 },
   { id: 'federation', key: '5', label: 'Federation', short: 'Fed', icon: '🌐', blurb: 'this node, its peers, keys and channels, placed by how far each is trusted', rows: 26 },
   { id: 'plugins', key: '6', label: 'Plugins', short: 'Plg', icon: '🧩', blurb: 'ruflo plugins: installed, enabled, in the marketplace clone, and loaded as mods', rows: 30 },
   { id: 'learning', key: '7', label: 'Learning', short: 'Lrn', icon: '🧠', blurb: 'router picks and outcomes, and the RETRIEVE → JUDGE → DISTILL → CONSOLIDATE pipeline', rows: 30 },
@@ -93,7 +98,7 @@ export const CLI_PREFIXES = {
 
 export type CliChoice = keyof typeof CLI_PREFIXES
 
-export type Options = {
+export type Options = GuardOptions & ConvoOptions & {
   cli: CliChoice
   /** How often the disk is re-read while the pane or band shows (seconds, 2-60). */
   refreshSeconds: number
@@ -130,6 +135,8 @@ export function optionsOf(raw: PluginOptions | undefined): Options {
     federationNetwork: value.federationNetwork === true,
     look: value.look === 'plain' ? 'plain' : 'bbs',
     boot: value.boot !== false,
+    ...guardOptionsOf(raw),
+    ...convoOptionsOf(raw),
   }
 }
 
@@ -230,6 +237,15 @@ export type State = {
   commandNames: string[]
   /** True while the primary Claude session is running a turn (the band reports it each draw). */
   turnActive: boolean
+  /** Notices the band announced (notices.ts): the newest 30, a running id, and a time before which the notice row stays quiet. */
+  notices: Notice[]
+  noticeSeq: number
+  noticesQuietUntilMs: number
+  /** `/ruflo band`: the band's mode for this session over the plugin option (null = the option), and whether it shows one row. */
+  bandMode: 'auto' | 'on' | 'off' | null
+  bandCompact: boolean
+  /** When the person-facing turn began (the band shows how long Claude has been working), null between turns. */
+  turnStartedMs: number | null
   /** Collapsible sections the person flipped from their default (`<view>/<id>`): open ones closed, closed ones open. */
   sections: Set<string>
   /** What one-shot entry fields hold while typed (cleared on Enter), by field key. */
@@ -294,6 +310,8 @@ export type State = {
   devtools: { fields: DevFields; /** Whether tmux is on this machine, from a probe when the Sandbox page opens. */ tmux: 'unknown' | 'present' | 'missing' }
   timers: Map<string, Timer>
   stats: { renders: number[]; refreshes: number[]; frames: number[] }
+  /** The Workflows page: the last read of Claude Code's run folders, the cursor, the inspector tab (wf-state.ts). */
+  wf: WfState
   /** Claude's control of the console (ADR-444): paused by the person, the call counts, and the log the dashboard shows. */
   control: { paused: boolean; calls: number; turnCalls: number; /** Model-driven actions this session, by class (ADR-450 T8 budget). */ used: Record<string, number>; log: ControlEntry[]; /** Until when Claude counts as driving (a tool call extends it): the console does not spend a second Claude turn on guidance meanwhile. */ drivingUntilMs: number; /** True while one of Claude's tool calls is running: a person's "always allow" answer must not let Claude's call skip the level and confirm checks (ADR-444). */ viaModel: boolean }
 }
@@ -336,6 +354,12 @@ export function newState(raw: PluginOptions | undefined): State {
     navPick: null,
     navQuery: '',
     turnActive: false,
+    notices: [],
+    noticeSeq: 0,
+    noticesQuietUntilMs: 0,
+    bandMode: null,
+    bandCompact: false,
+    turnStartedMs: null,
     commandNames: [],
     allowed: new Map(),
     sections: new Set(),
@@ -363,6 +387,7 @@ export function newState(raw: PluginOptions | undefined): State {
     devtools: { fields: emptyFields(), tmux: 'unknown' },
     timers: new Map(),
     stats: { renders: [], refreshes: [], frames: [] },
+    wf: emptyWf(),
     control: { paused: false, calls: 0, turnCalls: 0, used: {}, log: [], drivingUntilMs: 0, viaModel: false },
   }
 }

@@ -44,6 +44,7 @@ export const VIEW_TOPIC: Partial<Record<ViewId, string>> = {
   missions: 'mission',
   overview: 'setup',
   swarm: 'swarm',
+  workflows: 'swarm',
   hive: 'hive',
   claims: 'claims',
   approvals: 'approvals',

@@ -24,8 +24,9 @@ export const GROUPS: readonly { title: string; sections: readonly { name: string
   {
     title: 'SWARM',
     sections: [
-      { name: 'start here', items: [{ label: 'Missions', go: 'missions' }, { label: 'Overview', go: 'overview' }, { label: 'Swarm Topology', go: 'swarm' }] },
+      { name: 'start here', items: [{ label: 'Missions', go: 'missions' }, { label: 'Overview', go: 'overview' }] },
       { name: 'coordinate', items: [{ label: 'Hive-Mind', go: 'hive' }, { label: 'Claims Board', go: 'claims' }, { label: 'Approvals', go: 'approvals' }] },
+      { name: 'observe', items: [{ label: 'Swarm Topology', go: 'swarm' }, { label: 'Workflows', go: 'workflows' }] },
     ],
   },
   {

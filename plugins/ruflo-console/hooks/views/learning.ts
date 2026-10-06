@@ -3,10 +3,22 @@ import type { RenderElement } from 'claude-code'
 import type { Intelligence } from '../data/cli'
 import { ago, col, count, kv, live, pct, picture, row, section, sourceLine, starts, text, THEME, type Ctx } from './common'
 import { stagesOf } from './frames'
+import { CARD_COLUMNS, hasCards } from './card'
+import { pipeStagesOf, routeModelOf, stageNote } from '../data/pipeline'
+import { pipelineDiagram, routePicture } from '../gfx/pipeline'
+import type { Grid } from '../gfx/raster'
 import { settingsOf } from '../settings'
 import { resultRows } from './automate'
 import { pulseRows } from './learning-pulse'
 import { neuralActionRows } from './neural'
+
+/** A picture drawn here from the real state (the registry in frames.ts is not touched): the grid when the terminal has Raster, else its words. */
+function drawn(ctx: Ctx, key: string, grid: Grid, fallback: string): RenderElement {
+  return ctx.kit.Raster === undefined ? text(ctx, fallback, { dimColor: true }) : ctx.kit.Raster(grid.toRaster(key))
+}
+
+/** The width a picture is drawn to: a page in cards is narrower by the border and padding, as in frames.ts. */
+const pictureWidth = (ctx: Ctx): number => Math.max(20, Math.min(200, hasCards(ctx.columns) ? ctx.columns - CARD_COLUMNS : ctx.columns))
 
 /** The two switches that decide whether ruflo learns at all, folded away: each is a confirm-gated `ruflo config set`. */
 function configRows(ctx: Ctx): RenderElement[] {
@@ -64,6 +76,15 @@ export function learningView(ctx: Ctx): RenderElement {
   const router = snap?.router ?? null
   const neural = snap?.neural ?? null
   const intel = live<Intelligence>(state.probes.get('intelligence'))
+  // The mod owns `route` only where no classic route hook runs it (ADR-404): with `owned` empty it routes nothing and records nothing here.
+  const owned = state.ruflo.snapshot?.owned
+  const classicOwnsRoute = owned !== undefined && !owned.includes('route')
+  const lastOutcomeMs = outcomes?.points[outcomes.points.length - 1]?.atMs
+  const staleOutcomes = lastOutcomeMs !== undefined && nowMs - lastOutcomeMs > 24 * 3_600_000
+  const routeModel = routeModelOf({ seated: state.ruflo.snapshot !== null, classicOwnsRoute, route, lab: state.lab.result })
+  const routeFallback = `route: ${routeModel.owner} owns routing · ${routeModel.candidates.map(c => `${c.agent} ${c.confidence === null ? 'n/a' : pct(c.confidence)}`).join(' · ') || 'no route recorded'}`
+  // Each stage's age is its source's own timestamp; CONSOLIDATE's counter has none, so its age is n/a and it is never dimmed for age.
+  const pipeStages = pipeStagesOf(stagesOf(state), { RETRIEVE: neural?.lastAdaptationMs, JUDGE: lastOutcomeMs, DISTILL: neural?.lastAdaptationMs }, nowMs)
   const routerRows: RenderElement[] = [
     kv(
       ctx,
@@ -72,16 +93,19 @@ export function learningView(ctx: Ctx): RenderElement {
         ? `${route.agent} ${pct(route.confidence)} · ${route.matched ? 'keyword match' : 'no match, default'} · ${route.reason} (a prior, not a calibrated probability)`
         : state.ruflo.snapshot === null
           ? 'n/a — ruflo-mods not seated, so no in-process route'
-          : 'n/a — no prompt routed yet this session',
+          : classicOwnsRoute
+            ? 'n/a — in this project the classic hook-handler owns routing, so ruflo-mods stands down and records no picks (see /ruflo-mods)'
+            : 'n/a — no prompt routed yet this session',
     ),
     kv(
       ctx,
       'routed outcomes',
       outcomes === null || outcomes.total === 0
         ? 'n/a — no routing-outcomes.json'
-        : `${outcomes.successes}/${outcomes.total} succeeded (${pct(outcomes.successes / outcomes.total)} success rate, N=${outcomes.total}) · last ${ago(outcomes.points[outcomes.points.length - 1]?.atMs, nowMs)}`,
-      outcomes !== null && outcomes.total > 0 ? THEME.info : undefined,
+        : `${outcomes.successes}/${outcomes.total} succeeded (${pct(outcomes.successes / outcomes.total)} success rate, N=${outcomes.total}) · last ${ago(lastOutcomeMs, nowMs)}${staleOutcomes ? ' · nothing recorded since' : ''}`,
+      outcomes !== null && outcomes.total > 0 ? (staleOutcomes ? THEME.warn : THEME.info) : undefined,
     ),
+    drawn(ctx, 'route', routePicture(routeModel, pictureWidth(ctx)), routeFallback),
     picture(ctx, 'curve', `running success rate over ${outcomes?.total ?? 0} outcomes`),
     text(ctx, 'running success rate of routed tasks, oldest left (router accuracy over N outcomes); new outcomes draw in', { dimColor: true }),
     kv(
@@ -93,8 +117,9 @@ export function learningView(ctx: Ctx): RenderElement {
     ),
   ]
   const pipelineRows: RenderElement[] = [
-    picture(ctx, 'pipeline', stagesOf(state).map(stage => `${stage.name} ${stage.count ?? 'n/a'}`).join(' → ')),
-    ...stagesOf(state).map(stage => text(ctx, `  ${stage.name.toLowerCase()}: ${stage.source}`, { dimColor: true })),
+    drawn(ctx, 'pipeline-stages', pipelineDiagram(pipeStages, pictureWidth(ctx)), pipeStages.map(stage => `${stage.name} ${stage.count ?? 'n/a'} (${stageNote(stage)})`).join(' → ')),
+    ...stagesOf(state).map((stage, i) => text(ctx, `  ${stage.name.toLowerCase()}: ${stage.source} · ${stageNote(pipeStages[i] as (typeof pipeStages)[number])}`, { dimColor: true })),
+    text(ctx, `  a stage dims when its source has gained nothing for 24h; CONSOLIDATE has no timestamp, so its age is n/a`, { dimColor: true }),
     picture(ctx, 'patterns', `patterns since load: ${state.history.patterns.map(sample => sample.value).join(' ') || 'n/a'}`),
   ]
   const sonaRows: RenderElement[] = [
@@ -114,7 +139,7 @@ export function learningView(ctx: Ctx): RenderElement {
   ]
   const rows: RenderElement[] = [
     ...section(ctx, 'learn-router', 'Router', 'ruflo-mods · routing-outcomes.json', routerRows, true),
-    ...section(ctx, 'learn-pipeline', 'Pipeline', 'RETRIEVE → JUDGE → DISTILL → CONSOLIDATE', pipelineRows, false),
+    ...section(ctx, 'learn-pipeline', 'Pipeline', 'RETRIEVE → JUDGE → DISTILL → CONSOLIDATE', pipelineRows, true),
     ...section(ctx, 'learn-sona', 'SONA · ReasoningBank', 'neural/stats.json', sonaRows, false),
   ]
 

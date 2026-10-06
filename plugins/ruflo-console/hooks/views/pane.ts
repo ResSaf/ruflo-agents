@@ -48,6 +48,7 @@ import { pluginsView } from './plugins'
 import { secureResult, secureView } from './secure'
 import { skillsView } from './skills'
 import { swarmView } from './swarm'
+import { workflowsPage } from './wf-page'
 import { terminalView } from './terminal'
 import { vectorResult, vectorView } from './vector'
 import { xruvView } from './xruv'
@@ -66,6 +67,7 @@ const BODIES: Record<ViewId, (ctx: Ctx) => RenderElement> = {
   menu: menuView,
   overview: overviewView,
   swarm: swarmView,
+  workflows: workflowsPage,
   hive: hiveView,
   claims: claimsView,
   federation: federationView,
