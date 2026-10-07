@@ -27,4 +27,12 @@ describe('stateful cache invalidation patterns', () => {
     expect(cache.invalidatePattern(pattern)).toBe(1);
     expect(pattern.lastIndex).toBe(4);
   });
+  it('accepts a frozen non-global pattern without mutating its cursor', () => {
+    const cache = new CacheManager<string>();
+    caches.push(cache);
+    cache.set('article-one', 'old');
+    const pattern = Object.freeze(/article/);
+    expect(cache.invalidatePattern(pattern)).toBe(1);
+    expect(pattern.lastIndex).toBe(0);
+  });
 });

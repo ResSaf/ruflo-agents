@@ -297,10 +297,11 @@ export class CacheManager<T = MemoryEntry> extends EventEmitter {
 
     for (const key of this.cache.keys()) {
       // RegExp cursors belong to a single input, not the whole key sequence.
+      const stateful = regex.global || regex.sticky;
       const lastIndex = regex.lastIndex;
-      regex.lastIndex = 0;
+      if (stateful) regex.lastIndex = 0;
       const matches = regex.test(key);
-      regex.lastIndex = lastIndex;
+      if (stateful) regex.lastIndex = lastIndex;
       if (matches) {
         this.delete(key);
         invalidated++;
