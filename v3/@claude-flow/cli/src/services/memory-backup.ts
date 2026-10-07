@@ -15,6 +15,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { readFileMaybeEncrypted } from '../fs-secure.js';
+import { loadBetterSqlite3 } from '../memory/shared-sqlite.js';
 
 export interface BackupOptions {
   /** Source DB (default: <cwd>/.swarm/memory.db). */
@@ -245,8 +246,7 @@ export async function restoreMemoryDbFromBackup(
   // encrypted snapshots and provides the same checks on WASM-only hosts.
   let Database: any = null;
   try {
-    const mod: string = 'better-sqlite3';
-    Database = (await import(mod)).default;
+    Database = await loadBetterSqlite3();
   } catch {
     /* use the sql.js verifier */
   }
