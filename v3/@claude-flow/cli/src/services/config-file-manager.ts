@@ -157,11 +157,28 @@ export class ConfigFileManager {
     return targetPath;
   }
 
-  /** Reset config to defaults */
-  reset(cwd: string): string {
+  /** Reset all configuration or only the selected section to defaults. */
+  reset(cwd: string, section = 'all'): string {
+    if (!['agents', 'swarm', 'memory', 'mcp', 'providers', 'all'].includes(section)) {
+      throw new Error(`Unknown configuration section: ${section}`);
+    }
     this.selectProject(cwd);
     const targetPath = this.findConfig(cwd) ?? path.resolve(cwd, CONFIG_FILENAMES[0]);
-    const config = structuredClone(DEFAULT_CONFIG);
+    const config = section === 'all'
+      ? structuredClone(DEFAULT_CONFIG)
+      : structuredClone(this.load(cwd) ?? {});
+    if (section === 'providers') {
+      // Provider defaults are supplied by the provider command, so remove
+      // only the persisted override, as a whole reset already does.
+      delete config.providers;
+    } else if (section !== 'all') {
+      config[section] = structuredClone(DEFAULT_CONFIG[section]);
+    }
+    if (section !== 'all') {
+      for (const key of Object.keys(config)) {
+        if (key.startsWith(`${section}.`)) delete config[key];
+      }
+    }
     this.writeAtomic(targetPath, config);
     this.config = config;
     this.configPath = targetPath;
