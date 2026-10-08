@@ -160,6 +160,15 @@ const DEFAULT_WORKERS: WorkerConfigInternal[] = [
   { type: 'document', intervalMs: 60 * 60 * 1000, offsetMs: 0, priority: 'low', description: 'Auto-documentation', enabled: false },
 ];
 
+/** Parse only worker types the daemon can actually schedule. */
+export function parseEnabledWorkers(value: string): WorkerType[] {
+  const names = value.split(',');
+  if (!names.length || names.some(name => !DEFAULT_WORKERS.some(worker => worker.type === name))) {
+    throw new Error(`--workers must be a comma-separated list of: ${DEFAULT_WORKERS.map(worker => worker.type).join(',')}`);
+  }
+  return [...new Set(names)] as WorkerType[];
+}
+
 // Worker timeout — must exceed the longest per-worker headless timeout (15 min for audit/refactor).
 // Previously 5 min, which caused orphan processes when daemon timeout fired before executor timeout (#1117).
 const DEFAULT_WORKER_TIMEOUT_MS = 16 * 60 * 1000;
@@ -323,7 +332,7 @@ export class WorkerDaemon extends EventEmitter {
       aiWorkersEnabled: config?.aiWorkersEnabled
         ?? fileConfig.aiWorkersEnabled
         ?? (process.env.RUFLO_DAEMON_AI_WORKERS === '1'),
-      workers: config?.workers ?? DEFAULT_WORKERS,
+      workers: (config?.workers ?? DEFAULT_WORKERS).map(worker => ({ ...worker })),
       enabledWorkers: config?.enabledWorkers,
     };
 
