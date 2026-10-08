@@ -1,3 +1,4 @@
+import type { AppendCondition } from './append-conditions.js';
 /**
  * V3 Memory Initializer
  * Properly initializes the memory database with sql.js (WASM SQLite)
@@ -2924,6 +2925,9 @@ export async function storeEntry(options: {
   ttl?: number;
   dbPath?: string;
   upsert?: boolean;
+  requireNative?: boolean;
+  appendOnly?: boolean;
+  appendConditions?: AppendCondition[];
   /** ADR-323: defaults to 'unknown' when omitted. */
   provenanceType?: string;
 }): Promise<{
@@ -2938,6 +2942,10 @@ export async function storeEntry(options: {
    *  be produced — the row is stored without a vector. */
   embeddingError?: string;
 }> {
+  if (options.appendOnly && !options.requireNative) {
+    return { success: false, id: '', error: 'Immutable append requires a native writer' };
+  }
+
   // ADR-323: validate before touching either backend so an invalid value
   // gets one clear error instead of a raw SQLite CHECK-constraint failure
   // from whichever path (bridge vs sql.js) happens to run.
@@ -2971,6 +2979,10 @@ export async function storeEntry(options: {
     }
   }
 
+  if (options.requireNative || options.appendConditions) {
+    return { success: false, id: '', error: 'Native memory writer required; refusing whole-image sql.js fallback' };
+  }
+
   // Fallback: raw sql.js
   const {
     key,
@@ -2980,9 +2992,10 @@ export async function storeEntry(options: {
     tags = [],
     ttl,
     dbPath: customPath,
-    upsert = false,
+    upsert: requestedUpsert = false,
     provenanceType
   } = options;
+  const upsert = requestedUpsert && !options.appendOnly;
 
   const swarmDir = getMemoryRoot();
   const dbPath = customPath ? path.resolve(customPath) : path.join(swarmDir, 'memory.db');
