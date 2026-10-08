@@ -10,6 +10,7 @@
  */
 
 import { loadBetterSqlite3 } from './shared-sqlite.js';
+import { resolveMemoryRoot } from './memory-root.js';
 import { liveMemoryRowSql } from './live-memory-row.js';
 import { encodeEmbeddingQ8, MAX_LIST_EMBEDDINGS, type EmbeddingQ8 } from './embedding-q8.js';
 import * as fs from 'fs';
@@ -126,35 +127,7 @@ async function releaseOwnNativeHandle(dbPath: string): Promise<void> {
 let _memoryRootCache: string | undefined;
 export function getMemoryRoot(): string {
   if (_memoryRootCache !== undefined) return _memoryRootCache;
-
-  // 1. Env var
-  const envPath = process.env.CLAUDE_FLOW_MEMORY_PATH;
-  if (envPath && envPath.trim().length > 0) {
-    _memoryRootCache = path.resolve(envPath);
-    return _memoryRootCache;
-  }
-
-  // 2. Config file (claude-flow.config.json)
-  const configCandidates = [
-    path.resolve(process.cwd(), 'claude-flow.config.json'),
-    path.resolve(process.cwd(), '.claude-flow', 'config.json'),
-  ];
-  for (const configPath of configCandidates) {
-    if (!fs.existsSync(configPath)) continue;
-    try {
-      const raw = JSON.parse(fs.readFileSync(configPath, 'utf-8'));
-      const fromConfig: unknown = raw?.memory?.persistPath ?? raw?.memory?.path;
-      if (typeof fromConfig === 'string' && fromConfig.trim().length > 0) {
-        _memoryRootCache = path.resolve(fromConfig);
-        return _memoryRootCache;
-      }
-    } catch {
-      /* malformed config — fall through to default */
-    }
-  }
-
-  // 3. Default
-  _memoryRootCache = path.resolve(process.cwd(), '.swarm');
+  _memoryRootCache = resolveMemoryRoot(process.cwd());
   return _memoryRootCache;
 }
 
