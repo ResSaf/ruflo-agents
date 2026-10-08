@@ -2646,6 +2646,67 @@ export const doctorCommand: Command = {
     // Parser camelCases kebab-case flag names — read via `fixHandles`, not `['fix-handles']`.
     const fixHandles = ctx.flags.fixHandles as boolean;
 
+    // #2677: `--component memory` now runs the whole memory-health suite,
+    // not just the existence check. Values can be a single check or an
+    // array — expanded at execution time. Stuinfla's report showed the
+    // existence-only check reporting PASS on a 99.97%-empty and even a
+    // SQLite-malformed DB; the array here layers integrity → content →
+    // embedding coverage over the existing existence probe; check 6 then
+    // verifies that distilled episodes are actually Reflexion-retrievable and
+    // execution feedback carries a lesson.
+    const componentMap: Record<string, (() => Promise<HealthCheck>) | Array<() => Promise<HealthCheck>>> = {
+      'version': checkVersionFreshness,
+      'freshness': checkVersionFreshness,
+      'node': checkNodeVersion,
+      'npm': checkNpmVersion,
+      'claude': checkClaudeCode,
+      'browser': checkAgentBrowserVersion,
+      'config': checkConfigFile,
+      'stale-settings': checkStaleSettingsNpx, // #2448
+      'helpers': () => checkHelperIntegrity(), // #3565
+      'daemon': checkDaemonStatus,
+      get memory() { return [
+        checkMemoryDatabase,         // existing: exists + statable (unchanged)
+        checkMemoryIntegrity,        // #2677 check 1: sql.js open + PRAGMA integrity_check
+        ...nativeAgentDbChecks,       // #3195: present AgentDB authority, checked independently
+        checkMemoryPersistenceDriver, // #2968/#3321: read-only native capability probe
+        checkMemoryPackageVersion,   // #3392: loaded memory package satisfies the declared range
+        checkMemoryContent,          // #2677 check 2: memory_entries content coverage
+        checkMemoryEmbeddingCoverage, // #2677 check 3: vector coverage on populated rows
+        checkMemoryReflexionCoverage, // #2677 check 6: episodes are retrievable
+        checkMemoryCritiqueCoverage,  // #2677 check 6: feedback carries lessons
+      ]; },
+      'memory-package': checkMemoryPackageVersion, // #3392
+      'learning': checkLearningBridge, // #2545
+      'learning-bridge': checkLearningBridge, // #2545
+      'api': checkApiKeys,
+      'git': checkGit,
+      'mcp': checkMcpServers,
+      'mcp-overhead': checkMcpSchemaOverhead,
+      'aidefence': checkAIDefence, // #1807
+      'disk': checkDiskSpace,
+      'typescript': checkBuildTools,
+      'agentic-flow': checkAgenticFlow,
+      'encryption': checkEncryptionAtRest, // ADR-096 Phase 5
+      'federation': checkFederationBreaker, // ADR-097 Phase 4
+      'metaharness': [checkMetaharness, checkMetaharnessDeclaredPackages, checkMetaharnessIntegration], // ADR-150 — upstream + declared deps + ruflo-side
+      'metaharness-integration': checkMetaharnessIntegration, // iter 45 — ruflo-side
+      'funnel': checkFunnel, // ADR-305
+      // ADR-307 — deep-dive array, same pattern as 'memory' above: the cheap
+      // sponsored-consent check first, then binary/process/bind in the order
+      // a user would actually debug them (is it installed? running? exposed?).
+      'proxy': [checkProxySponsoredConsent, checkProxyBinary, checkProxyProcess, checkProxyBindAddress],
+      'auth': checkAuth, // ADR-306
+      'typesafe': checkTypesafeRouter, // opt-in @ruvector/typesafe task router
+      'mods': checkMods, // ADR-404 — ruflo as a Claude Code mod
+    };
+
+    if (component !== undefined && !Object.hasOwn(componentMap, component)) {
+      const message = `Unknown doctor component: ${JSON.stringify(component)}. Valid components: ${Object.keys(componentMap).join(', ')}`;
+      output.printError(message);
+      return { success: false, exitCode: 1, message };
+    }
+
     // Early-return short-circuit: `--fix-handles` is a targeted mitigation, not
     // part of the health-check flow. Runs, reports, exits.
     if (fixHandles) {
@@ -2759,63 +2820,8 @@ export const doctorCommand: Command = {
       checkMods, // ADR-404 — Claude Code mod path (warn-only)
     ];
 
-    // #2677: `--component memory` now runs the whole memory-health suite,
-    // not just the existence check. Values can be a single check or an
-    // array — expanded at execution time. Stuinfla's report showed the
-    // existence-only check reporting PASS on a 99.97%-empty and even a
-    // SQLite-malformed DB; the array here layers integrity → content →
-    // embedding coverage over the existing existence probe; check 6 then
-    // verifies that distilled episodes are actually Reflexion-retrievable and
-    // execution feedback carries a lesson.
-    const componentMap: Record<string, (() => Promise<HealthCheck>) | Array<() => Promise<HealthCheck>>> = {
-      'version': checkVersionFreshness,
-      'freshness': checkVersionFreshness,
-      'node': checkNodeVersion,
-      'npm': checkNpmVersion,
-      'claude': checkClaudeCode,
-      'browser': checkAgentBrowserVersion,
-      'config': checkConfigFile,
-      'stale-settings': checkStaleSettingsNpx, // #2448
-      'helpers': () => checkHelperIntegrity(), // #3565
-      'daemon': checkDaemonStatus,
-      'memory': [
-        checkMemoryDatabase,         // existing: exists + statable (unchanged)
-        checkMemoryIntegrity,        // #2677 check 1: sql.js open + PRAGMA integrity_check
-        ...nativeAgentDbChecks,       // #3195: present AgentDB authority, checked independently
-        checkMemoryPersistenceDriver, // #2968/#3321: read-only native capability probe
-        checkMemoryPackageVersion,   // #3392: loaded memory package satisfies the declared range
-        checkMemoryContent,          // #2677 check 2: memory_entries content coverage
-        checkMemoryEmbeddingCoverage, // #2677 check 3: vector coverage on populated rows
-        checkMemoryReflexionCoverage, // #2677 check 6: episodes are retrievable
-        checkMemoryCritiqueCoverage,  // #2677 check 6: feedback carries lessons
-      ],
-      'memory-package': checkMemoryPackageVersion, // #3392
-      'learning': checkLearningBridge, // #2545
-      'learning-bridge': checkLearningBridge, // #2545
-      'api': checkApiKeys,
-      'git': checkGit,
-      'mcp': checkMcpServers,
-      'mcp-overhead': checkMcpSchemaOverhead,
-      'aidefence': checkAIDefence, // #1807
-      'disk': checkDiskSpace,
-      'typescript': checkBuildTools,
-      'agentic-flow': checkAgenticFlow,
-      'encryption': checkEncryptionAtRest, // ADR-096 Phase 5
-      'federation': checkFederationBreaker, // ADR-097 Phase 4
-      'metaharness': [checkMetaharness, checkMetaharnessDeclaredPackages, checkMetaharnessIntegration], // ADR-150 — upstream + declared deps + ruflo-side
-      'metaharness-integration': checkMetaharnessIntegration, // iter 45 — ruflo-side
-      'funnel': checkFunnel, // ADR-305
-      // ADR-307 — deep-dive array, same pattern as 'memory' above: the cheap
-      // sponsored-consent check first, then binary/process/bind in the order
-      // a user would actually debug them (is it installed? running? exposed?).
-      'proxy': [checkProxySponsoredConsent, checkProxyBinary, checkProxyProcess, checkProxyBindAddress],
-      'auth': checkAuth, // ADR-306
-      'typesafe': checkTypesafeRouter, // opt-in @ruvector/typesafe task router
-      'mods': checkMods, // ADR-404 — ruflo as a Claude Code mod
-    };
-
     let checksToRun = allChecks;
-    if (component && componentMap[component]) {
+    if (component !== undefined) {
       const entry = componentMap[component];
       checksToRun = Array.isArray(entry) ? entry : [entry];
     }
