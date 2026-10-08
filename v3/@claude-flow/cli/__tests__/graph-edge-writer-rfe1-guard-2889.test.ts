@@ -68,7 +68,7 @@ afterEach(async () => {
 });
 
 describe('#2889 graph-edge-writer RFE1 encryption guard', () => {
-  it.skipIf(!native)('a genuinely RFE1-encrypted file returns null without attempting the native open, and warns once per process', async () => {
+  it.skipIf(!native)('a genuinely RFE1-encrypted file returns null without attempting the native open, and warns once per dbPath (deduped across repeat calls on the same path)', async () => {
     const { encryptBuffer } = await import('../src/encryption/vault.js');
     const key = randomBytes(32);
     const blob = encryptBuffer(Buffer.from('irrelevant plaintext payload'), key);
@@ -131,6 +131,28 @@ describe('#2889 graph-edge-writer RFE1 encryption guard', () => {
     expect(row.n).toBe(0);
 
     gw._resetBridgeDb();
+  });
+
+  it.skipIf(!native)('warns separately for TWO distinct encrypted dbPaths in the same process — dedup must be keyed by path, not a single global flag', async () => {
+    const { encryptBuffer } = await import('../src/encryption/vault.js');
+    const key = randomBytes(32);
+
+    const pathA = join(root, 'a.db');
+    const pathB = join(root, 'b.db');
+    writeFileSync(pathA, encryptBuffer(Buffer.from('payload-a'), key));
+    writeFileSync(pathB, encryptBuffer(Buffer.from('payload-b'), key));
+
+    const { gw } = await freshGraphWriterWithSpy();
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(await gw.getBridgeDb(pathA)).toBeNull();
+    expect(await gw.getBridgeDb(pathB)).toBeNull();
+    // Repeat pathA — must NOT produce a second warning for the same path.
+    expect(await gw.getBridgeDb(pathA)).toBeNull();
+
+    const warningsFor = (p: string) => errSpy.mock.calls.filter((call) => String(call[0]).includes(p));
+    expect(warningsFor(pathA)).toHaveLength(1);
+    expect(warningsFor(pathB)).toHaveLength(1);
   });
 
   it.skipIf(!native)('isBridgeDbEncryptedAtRest distinguishes the encrypted case from plaintext/corrupt/missing', async () => {

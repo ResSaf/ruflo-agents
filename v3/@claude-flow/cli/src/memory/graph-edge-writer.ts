@@ -53,7 +53,9 @@ import { isEncryptedBlob } from '../encryption/vault.js';
 //
 // Fix: sniff the header bytes (never buffer the whole file — memory.db can
 // be multi-GB) before attempting the native open. If it's RFE1-encrypted,
-// skip the native open (it would only throw) and warn once per process.
+// skip the native open (it would only throw) and warn once per distinct
+// dbPath (not once per process — a process can legitimately touch more
+// than one encrypted store via a custom `dbPath` argument).
 
 /** Read just the first `len` bytes of a file without loading the whole file
  * into memory. Mirrors the pattern in commands/doctor.ts's readHeaderBytes
@@ -85,11 +87,17 @@ function isRfe1EncryptedAtRest(filePath: string): boolean {
   }
 }
 
-let _warnedRfe1Encrypted = false;
+// Keyed by resolved path (not a single process-wide boolean) — a process
+// that touches more than one RFE1-encrypted dbPath (a custom `dbPath` passed
+// to insertGraphEdge/queryEdgesBySource/countGraphEdges, or any multi-store
+// scenario) must still get the warning for EACH distinct path, not just the
+// first one it happens to see.
+const _warnedRfe1EncryptedPaths = new Set<string>();
 
 function warnRfe1EncryptedOnce(dbPath: string): void {
-  if (_warnedRfe1Encrypted) return;
-  _warnedRfe1Encrypted = true;
+  const resolved = path.resolve(dbPath);
+  if (_warnedRfe1EncryptedPaths.has(resolved)) return;
+  _warnedRfe1EncryptedPaths.add(resolved);
   // eslint-disable-next-line no-console
   console.error(
     `[graph-edge-writer] ${dbPath} is encrypted at rest (CLAUDE_FLOW_ENCRYPT_AT_REST). ` +
@@ -112,9 +120,9 @@ export function isBridgeDbEncryptedAtRest(customDbPath?: string): boolean {
   return fs.existsSync(dbPath) && isRfe1EncryptedAtRest(dbPath);
 }
 
-/** Test-only: clear the once-per-process warning flag. */
+/** Test-only: clear the once-per-path warning dedup set. */
 export function _resetRfe1WarningFlag(): void {
-  _warnedRfe1Encrypted = false;
+  _warnedRfe1EncryptedPaths.clear();
 }
 
 // ============================================================================
