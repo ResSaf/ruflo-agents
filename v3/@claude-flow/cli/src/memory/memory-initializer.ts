@@ -63,25 +63,85 @@ function isRuvectorCoreResolvable(): boolean {
 }
 
 /**
- * #2735 — before a whole-image sql.js read-modify-persist (export() +
- * rename over the live database path), refuse if there is evidence of a
- * live native (better-sqlite3) WAL connection: `-wal`/`-shm` sidecar files
- * on disk. A native connection in WAL mode keeps its sidecars present for
- * its entire lifetime (removed only on the last connection's clean close),
- * so their presence is strong evidence of a live native holder — and their
- * absence means the image is a clean, checkpointed, standalone file that
- * sql.js can safely read-modify-write.
+ * #2735 / #3161 — before a whole-image sql.js read-modify-persist (export() +
+ * rename over the live database path), refuse if a native (better-sqlite3)
+ * WAL connection is actually LIVE. `-wal`/`-shm` sidecar presence alone is
+ * not proof of that: #3161 found `ruflo doctor`'s readonly diagnostic
+ * connections leave orphaned sidecars behind after a plain `.close()` (WAL
+ * mode does not checkpoint on close unless the closing connection was the
+ * last holder in a state that triggers one), permanently blocking every
+ * later write in that project.
  *
- * This is a scoped-down version of the fuller "scan live process holders"
- * design discussed in #2735: it does not close the narrow assess-then-write
- * race (a native opener could still attach in the gap between this check
- * and the write), but it directly closes the demonstrated corruption
- * mechanism — a whole-image write proceeding while an ALREADY-OPEN native
- * connection's sidecars are on disk — with no platform-specific process
- * scanning. Fails closed (treats a stat error as "unsafe") because this is
- * a safety gate, not a best-effort probe.
+ * Liveness is probed in two steps, because a single `wal_checkpoint`
+ * busy-check is not sufficient on its own:
+ *
+ *  1. Open our own probe connection and run `PRAGMA wal_checkpoint(TRUNCATE)`.
+ *     `busy !== 0` means another connection genuinely holds a lock blocking
+ *     the checkpoint RIGHT NOW (an open transaction) — unsafe, refuse
+ *     immediately. This also truncates a genuinely-orphaned WAL as a side
+ *     effect.
+ *  2. If `busy === 0`, close our probe connection and re-check whether the
+ *     sidecars are still on disk. SQLite only deletes `-wal`/`-shm` when the
+ *     LAST connection to the database closes. If nothing else is attached,
+ *     OUR close is that last close and the sidecars vanish — safe, proceed.
+ *     If they are still present after our own close, some OTHER connection
+ *     is still attached (even idle, holding no lock — e.g. a foreign native
+ *     handle that already finished its last statement), so step 1's
+ *     busy-check alone would have missed it. Refuse.
+ *
+ * Step 2 is what makes this safe against an idle-but-attached native
+ * connection (an open handle holding no lock does not block checkpointing,
+ * so step 1 alone would report "safe" even though a real holder is still
+ * attached) without resorting to platform-specific process scanning.
+ *
+ * The common case (no sidecars at all) stays a couple of cheap `existsSync`
+ * calls — a DB connection is only opened when a sidecar is actually present
+ * to investigate.
+ *
+ * This is still a scoped-down version of the fuller "scan live process
+ * holders" design discussed in #2735: it does not close the narrow
+ * assess-then-write race (a native opener could still attach in the gap
+ * between this check and the write), but it directly closes the
+ * demonstrated corruption mechanism — a whole-image write proceeding while
+ * an ALREADY-OPEN native connection genuinely holds the file — with no
+ * platform-specific process scanning. Fails closed (treats any probe error
+ * as "unsafe") because this is a safety gate, not a best-effort probe.
  */
-function hasNativeWalSidecars(dbPath: string): boolean {
+async function hasNativeWalSidecars(dbPath: string): Promise<boolean> {
+  try {
+    if (!fs.existsSync(`${dbPath}-wal`) && !fs.existsSync(`${dbPath}-shm`)) {
+      return false;
+    }
+  } catch {
+    return true;
+  }
+
+  let db: { pragma(sql: string): unknown; close(): void } | undefined;
+  try {
+    const Database = await loadBetterSqlite3();
+    const opened = new Database(dbPath);
+    db = opened;
+    // Report busy immediately instead of retrying for the driver's default
+    // (multi-second) busy_timeout — a live holder's checkpoint-blocking
+    // lock is a steady-state fact at probe time, not a transient we should
+    // wait out, and this is a safety gate on a hot write path.
+    opened.pragma('busy_timeout = 0');
+    const [{ busy }] = opened.pragma('wal_checkpoint(TRUNCATE)') as Array<{ busy: number }>;
+    if (busy !== 0) return true;
+  } catch {
+    return true;
+  } finally {
+    try {
+      db?.close();
+    } catch {
+      // best-effort
+    }
+  }
+
+  // Nothing was mid-transaction at probe time, and our own (now-closed)
+  // probe connection just truncated the WAL. If the sidecars are still
+  // here, another connection is still attached and kept them alive through
+  // our close.
   try {
     return fs.existsSync(`${dbPath}-wal`) || fs.existsSync(`${dbPath}-shm`);
   } catch {
@@ -2966,7 +3026,7 @@ export async function storeEntry(options: {
     // race). This check gates ensureSchemaColumns()'s own whole-image
     // write below too, not just this function's.
     await releaseOwnNativeHandle(dbPath);
-    if (hasNativeWalSidecars(dbPath)) {
+    if (await hasNativeWalSidecars(dbPath)) {
       return {
         success: false,
         id: '',
@@ -3487,7 +3547,7 @@ export async function listEntries(options: {
     // Listing can migrate/backfill the schema, so it is also a whole-image
     // writer. The newly selected native mirror may still have a live WAL.
     await releaseOwnNativeHandle(dbPath);
-    if (hasNativeWalSidecars(dbPath)) {
+    if (await hasNativeWalSidecars(dbPath)) {
       return { success: false, entries: [], total: 0, error: await walRefusalError('read/write') };
     }
 
@@ -3659,7 +3719,7 @@ export async function getEntry(options: {
     // bump is itself a whole-image write, not a lightweight read, even
     // though this function's contract reads as a "get".
     await releaseOwnNativeHandle(dbPath);
-    if (hasNativeWalSidecars(dbPath)) {
+    if (await hasNativeWalSidecars(dbPath)) {
       return {
         success: false,
         found: false,
@@ -3812,7 +3872,7 @@ export async function deleteEntry(options: {
     // #2735 — see storeEntry's identical gate for the corruption mechanism
     // this closes.
     await releaseOwnNativeHandle(dbPath);
-    if (hasNativeWalSidecars(dbPath)) {
+    if (await hasNativeWalSidecars(dbPath)) {
       return {
         success: false,
         deleted: false,
@@ -4056,7 +4116,7 @@ export async function purgeNamespace(options: {
 
       // Recheck at mutation time even when the CLI already read a preview.
       await releaseOwnNativeHandle(dbPath);
-      if (hasNativeWalSidecars(dbPath)) {
+      if (await hasNativeWalSidecars(dbPath)) {
         return { success: false, deletedCount: 0, remainingEntries: 0, error: await walRefusalError('write') };
       }
 
