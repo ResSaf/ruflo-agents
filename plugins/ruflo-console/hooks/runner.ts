@@ -3,6 +3,8 @@
  * `/ruflo yes`) and then runs one fixed argv through the ruflo CLI, after which the disk is re-read to say whether it
  * took; a read runs at once and shows what it printed. Nothing reaches `$` but through the Host.
  */
+import { LONG_TEXT_MAX } from './full-text'
+import { textRefusal } from './ops'
 import type { ActionSpec } from './actions'
 import { rememberKey } from './remember'
 import { record } from './data/events'
@@ -127,8 +129,20 @@ export function createRunner(state: State, host: Host, deps: RunnerDeps): Runner
       return
     }
 
-    if (spec.isReadOnly === true) {
+    // Claude's call is held to the gate, whatever the entry says about itself: a "read-only" entry that declares it spends, writes or reaches the
+    // network is queued for the level, budget and confirm checks (callTool), not run (#3815). The person's own click is unchanged.
+    const byModel = spec.byModel === true || state.control.viaModel
+    const isActingForModel = byModel && spec.isReadOnly === true && spec.declared !== undefined
+
+    if (spec.isReadOnly === true && !isActingForModel) {
       inflight = execute(spec)
+
+      return
+    }
+
+    // Claude's ask never replaces what the person has waiting: their Yes would run Claude's action instead of the one they read (ADR-450 T17).
+    if (byModel && state.pending !== null) {
+      say('not queued', false, `an action is already waiting for the person ("${plain(state.pending.label, 80)}"): Claude's request was dropped`)
 
       return
     }
@@ -137,14 +151,14 @@ export function createRunner(state: State, host: Host, deps: RunnerDeps): Runner
     // Claude asked for (ADR-444) still goes through the pending path, where the control level and the confirm mode decide.
     const kind = rememberKey(spec)
 
-    if (kind !== null && state.allowed.has(kind) && !state.control.viaModel) {
+    if (kind !== null && state.allowed.has(kind) && !byModel) {
       inflight = execute({ ...spec, label: `${spec.label} (remembered: not asked)` })
 
       return
     }
 
     pendingSpec = spec
-    state.pending = { view: state.view, ...(kind !== null && { rememberKey: kind }), ...(spec.scope !== undefined && { scope: spec.scope }), label: spec.label, args: spec.args, expect: spec.expect, askedAtMs: Date.now(), source: state.control.viaModel ? 'claude' : 'you', ...(spec.shows !== undefined && { shows: spec.shows }), ...(spec.note !== undefined && { note: spec.note }), ...(spec.declared !== undefined && { declared: spec.declared }) }
+    state.pending = { view: state.view, ...(kind !== null && { rememberKey: kind }), ...(spec.scope !== undefined && { scope: spec.scope }), label: spec.label, args: spec.args, expect: spec.expect, askedAtMs: Date.now(), source: byModel ? 'claude' : 'you', ...(spec.shows !== undefined && { shows: spec.shows }), ...(spec.note !== undefined && { note: spec.note }), ...(spec.declared !== undefined && { declared: spec.declared }) }
     host.invalidate()
   }
 
@@ -185,9 +199,23 @@ export function createRunner(state: State, host: Host, deps: RunnerDeps): Runner
       case 'spec':
         ask(entry.run.spec, entry.run.why)
         break
-      case 'text':
-        ask(entry.run.make(text), entry.run.why?.(text) ?? `type "${entry.run.keyword} <text>"; text may not start with -`)
+      case 'text': {
+        // Over every limit: refused with the exact count, before anything runs; the palette keeps the text (ADR-481).
+        const tooLong = textRefusal(text, 'the text', LONG_TEXT_MAX)
+
+        if (tooLong !== null) {
+          state.palette.isOpen = true
+          say('text too long', false, tooLong)
+          break
+        }
+
+        const spec = entry.run.make(text)
+        // A command argument carries less than a prompt: when the entry refused only for that, say by how much.
+        const argvWhy = spec === null ? textRefusal(text) : null
+
+        ask(spec, argvWhy ?? entry.run.why?.(text) ?? `type "${entry.run.keyword} <text>"; text may not start with -`)
         break
+      }
       case 'view':
         deps.setView(entry.run.view)
         break

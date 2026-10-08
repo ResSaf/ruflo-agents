@@ -5,6 +5,7 @@
  * looks like it holds a credential is refused before either; a key is read from the NAMED environment variable at send time, rides one
  * header, and is masked out of anything drawn, logged or saved (including the provider's own reply).
  */
+import { ARGV_TEXT_MAX } from '../full-text'
 import { exec } from '../actions'
 import { OPERATOR, hivePropose } from '../hive'
 import type { Host } from '../host'
@@ -27,20 +28,21 @@ export type SendDeps = Pick<Host, 'toolCall' | 'toolCheck' | 'run' | 'httpSend' 
 
 export type SendState = 'reply' | 'queued' | 'sent' | 'error' | 'refused'
 
-export type SendResult = { ok: boolean; state: SendState; text: string; tokensIn?: number; tokensOut?: number; costUsd?: number; model?: string }
+/** `tokensTotal` is for a provider that reports one figure without a split (the codex CLI's "tokens used"). */
+export type SendResult = { ok: boolean; state: SendState; text: string; tokensIn?: number; tokensOut?: number; tokensTotal?: number; costUsd?: number; model?: string }
 
 export type Payload = { shows: string; note: string }
 
 const REPLY_CAP = 4000
 const WAIT = { peer: 600_000, codex: 300_000, cli: 60_000, http: 120_000 }
 
-const err = (state: SendState, text: string): SendResult => ({ ok: false, state, text: tidy(text, 300) })
+const err = (state: SendState, text: string): SendResult => ({ ok: false, state, text: tidy(text, 300).trim() })
 
 /** Text from outside: escapes and control characters out, credentials masked, capped. */
 export const tidy = (value: string, max = REPLY_CAP): string => cleanText(value).slice(0, max)
 
 /** The body checked: plain, bounded, no leading dash, nothing that looks like a credential. */
-export const bodyOf = (value: string, max = 1500): { ok: true; text: string } | { ok: false; why: string } => guardText(value, max)
+export const bodyOf = (value: string, max = ARGV_TEXT_MAX): { ok: true; text: string } | { ok: false; why: string } => guardText(value, max)
 
 const endpointOf = (target: Target, config: Config): Endpoint | undefined => endpointsOf(config).find(held => held.name === target.ref)
 
@@ -71,7 +73,7 @@ export function payloadOf(target: Target, raw: string, deps: Pick<SendDeps, 'con
     case 'prompt':
       return done(`to Claude in this session, as a visible prompt: "${body}"`, 'Starts a turn of this session (billed as any turn is). Its answer is the next turn in the transcript.')
     case 'send-message':
-      return done(`SendMessage ${JSON.stringify({ to: target.ref, message: body })}`, 'The engine queues it for the agent\'s next tool round; delivery and effect are not verified.')
+      return done(`SendMessage ${JSON.stringify({ to: target.ref, message: body })}`, 'The engine puts it in the agent\'s inbox and delivers it when the agent\'s current turn ends (measured 161 and 165 s into a running agent\'s loop, Claude Code 2.1.289); the agent then acted on it within 2 s, and any tool it runs raises its own permission dialog.')
     case 'hive': {
       if (deps.hive === null) return { ok: false, why: 'there is no hive-mind to write to' }
 
@@ -81,12 +83,12 @@ export function payloadOf(target: Target, raw: string, deps: Pick<SendDeps, 'con
         return spec === null ? { ok: false, why: 'a proposal is not possible now (raft allows one open proposal per term) or the text cannot be passed' } : done(`ruflo ${spec.args.join(' ')}`, 'Opens a proposal the workers vote on. A pass binds no agent to do anything.')
       }
 
-      return done(`ruflo mcp exec -t hive-mind_broadcast ${JSON.stringify({ message: body.slice(0, 160), priority: 'normal', fromId: OPERATOR })}`, 'Appended to the hive shared memory (the last 100). No worker is interrupted.')
+      return done(`ruflo mcp exec -t hive-mind_broadcast ${JSON.stringify({ message: body, priority: 'normal', fromId: OPERATOR })}`, 'Appended to the hive shared memory (the last 100). No worker is interrupted.')
     }
     case 'task': {
       const note = taskNote(body)
 
-      return note === null ? { ok: false, why: 'start with the task id, then the note: @task task-12 what the agent should know' } : done(`ruflo mcp exec -t task_update ${JSON.stringify({ taskId: note.id, result: { guidance: note.note.slice(0, 300) } })}`, 'Writes the task record\'s result; an agent sees it only when it reads the task.')
+      return note === null ? { ok: false, why: 'start with the task id, then the note: @task task-12 what the agent should know' } : done(`ruflo mcp exec -t task_update ${JSON.stringify({ taskId: note.id, result: { guidance: note.note } })}`, 'Writes the task record\'s result; an agent sees it only when it reads the task.')
     }
     case 'bbs':
       return done(`ruflo mcp exec -t federation_bbs_publish ${JSON.stringify({ roomId: target.ref, msgType: 'human-message', payload: { text: body, from: 'ruflo-console' } })}`, 'Appended to the room log; peers get it where the room syncs.')
@@ -151,7 +153,7 @@ export async function sendTo(deps: SendDeps, target: Target, raw: string): Promi
 
       const outcome = await callTool(deps, { tool: 'SendMessage', to: target.ref, message: body, summary: body.slice(0, 40) })
 
-      return outcome.ok ? { ok: true, state: 'queued', text: `${outcome.text} (queued is not delivered)` } : err(outcome.kind === 'denied' ? 'refused' : 'error', outcome.text)
+      return outcome.ok ? { ok: true, state: 'queued', text: `${outcome.text} (queued: it reaches the agent when its current turn ends)` } : err(outcome.kind === 'denied' ? 'refused' : 'error', outcome.text)
     }
     case 'hive': {
       if (target.ref === 'propose') {
@@ -164,12 +166,12 @@ export async function sendTo(deps: SendDeps, target: Target, raw: string): Promi
         return proposed !== undefined && proposed.exitCode === 0 ? { ok: true, state: 'sent', text: 'the proposal was opened; the workers vote on it' } : err('error', proposed?.stderr ?? 'refused')
       }
 
-      return viaCli(deps, 'hive-mind_broadcast', { message: body.slice(0, 160), priority: 'normal', fromId: OPERATOR })
+      return viaCli(deps, 'hive-mind_broadcast', { message: body, priority: 'normal', fromId: OPERATOR })
     }
     case 'task': {
       const note = taskNote(body)
 
-      return note === null ? err('refused', 'no task id') : viaCli(deps, 'task_update', { taskId: note.id, result: { guidance: note.note.slice(0, 300) } })
+      return note === null ? err('refused', 'no task id') : viaCli(deps, 'task_update', { taskId: note.id, result: { guidance: note.note } })
     }
     case 'bbs':
       return viaCli(deps, 'federation_bbs_publish', { roomId: target.ref, msgType: 'human-message', payload: { text: body, from: 'ruflo-console' } })
@@ -178,13 +180,13 @@ export async function sendTo(deps: SendDeps, target: Target, raw: string): Promi
     case 'peer': {
       const result = await deps.run(['bash', deps.helper, 'dispatch', target.ref, body, ...(deps.trustedPeers.has(target.ref) ? [] : ['--confirm'])], WAIT.peer).catch((error: unknown) => ({ exitCode: -1, stdout: '', stderr: error instanceof Error ? error.message : 'refused' }))
 
-      return result.exitCode === 0 && result.stdout.trim() !== '' ? { ok: true, state: 'reply', text: tidy(result.stdout) } : err('error', result.stderr.trim() !== '' ? result.stderr : `the peer answered nothing (exit ${result.exitCode})`)
+      return result.exitCode === 0 && result.stdout.trim() !== '' ? { ok: true, state: 'reply', text: tidy(result.stdout).trim() } : err('error', result.stderr.trim() !== '' ? result.stderr : `the peer answered nothing (exit ${result.exitCode})`)
     }
     case 'codex': {
       const result = await deps.run(['codex', 'exec', '-s', 'read-only', '--skip-git-repo-check', '--ephemeral', '-C', deps.cwd, '-'], WAIT.codex, body).catch((error: unknown) => ({ exitCode: -1, stdout: '', stderr: error instanceof Error ? error.message : 'refused' }))
       const used = /tokens used\s*[:\n]\s*([\d,]+)/i.exec(result.stderr + result.stdout)?.[1]
 
-      return result.exitCode === 0 && result.stdout.trim() !== '' ? { ok: true, state: 'reply', text: tidy(result.stdout), ...(used !== undefined && { tokensOut: Number(used.replace(/,/g, '')) }) } : err('error', result.stderr.trim() !== '' ? result.stderr : `codex answered nothing (exit ${result.exitCode})`)
+      return result.exitCode === 0 && result.stdout.trim() !== '' ? { ok: true, state: 'reply', text: tidy(result.stdout).trim(), ...(used !== undefined && { tokensTotal: Number(used.replace(/,/g, '')) }) } : err('error', result.stderr.trim() !== '' ? result.stderr : `codex answered nothing (exit ${result.exitCode})`)
     }
     case 'http': {
       const endpoint = endpointOf(target, deps.config)

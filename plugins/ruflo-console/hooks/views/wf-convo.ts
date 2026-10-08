@@ -63,7 +63,7 @@ function threadRows(ctx: Ctx, target: Target, convoOf: ReturnType<typeof liveOf>
   if (thread === undefined || thread.msgs.length === 0) return [text(ctx, `No messages with @${target.id} yet.`, { dimColor: true })]
 
   const stats = statsOf(thread)
-  const rows: RenderElement[] = [text(ctx, `${stats.sent} sent · ${stats.answered} answered · ${stats.failed} failed · tokens ${stats.tokensIn === 0 && stats.tokensOut === 0 ? 'n/a' : `${stats.tokensIn} in / ${stats.tokensOut} out`} · cost ${stats.usd === null ? 'n/a (no billed figure reported)' : `$${stats.usd.toFixed(4)} billed`}${thread.dropped > 0 ? ` · ${thread.dropped} oldest dropped at the ${MAX_MSGS}-message cap` : ''}`, { dimColor: true })]
+  const rows: RenderElement[] = [text(ctx, `${stats.sent} sent · ${stats.answered} answered · ${stats.failed} failed · tokens ${stats.tokensIn === 0 && stats.tokensOut === 0 ? (stats.tokensTotal === 0 ? 'n/a' : `${stats.tokensTotal} total`) : `${stats.tokensIn} in / ${stats.tokensOut} out${stats.tokensTotal === 0 ? '' : ` + ${stats.tokensTotal} total`}`} · cost ${stats.usd === null ? 'n/a (no billed figure reported)' : `$${stats.usd.toFixed(4)} billed`}${thread.dropped > 0 ? ` · ${thread.dropped} oldest dropped at the ${MAX_MSGS}-message cap` : ''}`, { dimColor: true })]
 
   for (const msg of thread.msgs.slice(-SHOWN)) {
     const color = msg.who === 'you' ? THEME.info : STATE_COLOR[msg.state]
@@ -107,7 +107,7 @@ export function conversationRows(env: SlotEnv): RenderElement[] {
 
   if (live.config.errors.length > 0) rows.push(text(ctx, `convoTargets option: ${live.config.errors[0] ?? ''}${live.config.errors.length > 1 ? ` (+${live.config.errors.length - 1} more)` : ''}`, { color: THEME.warn }))
 
-  rows.push(ctx.kit.Input === undefined ? text(ctx, 'this surface has no text field: the composer needs one', { dimColor: true }) : ctx.kit.Input({ key: 'wf-convo-text', label: 'message', placeholder: '@claude @openrouter what do you think? (@all = agents, hive, rooms)', submitLabel: 'set', onSubmit: value => { live.draft = value.slice(0, 1500); redraw() } }))
+  rows.push(ctx.kit.Input === undefined ? text(ctx, 'this surface has no text field: the composer needs one', { dimColor: true }) : ctx.kit.Input({ key: 'wf-convo-text', label: 'message', placeholder: '@claude @openrouter what do you think? (@all = agents, hive, rooms)', submitLabel: 'set', onSubmit: value => { live.draft = value; redraw() } }))
   rows.push(text(ctx, live.draft === '' ? 'message: none typed yet' : `message: ${cleanText(live.draft)}`, { color: live.draft === '' ? undefined : THEME.info }))
   if (fan.why !== '') rows.push(text(ctx, fan.why, { color: THEME.warn }))
 
