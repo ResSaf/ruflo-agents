@@ -1,4 +1,3 @@
-import { AppendConditionFailed, assertAppendConditions, validateAppendConditions, type AppendCondition } from './append-conditions.js';
 /**
  * Memory Bridge — Routes CLI memory operations through ControllerRegistry + AgentDB v3
  *
@@ -17,6 +16,7 @@ import { AppendConditionFailed, assertAppendConditions, validateAppendConditions
  *
  * @module v3/cli/memory-bridge
  */
+import { AppendConditionFailed, assertAppendConditions, validateAppendConditions, type AppendCondition } from './append-conditions.js';
 
 import { liveMemoryRowSql } from './live-memory-row.js';
 import { resolveAgentdbBetterSqlite3 } from './shared-sqlite.js';

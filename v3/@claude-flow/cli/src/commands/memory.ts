@@ -1,8 +1,8 @@
-import { validateAppendConditions } from '../memory/append-conditions.js';
 /**
  * V3 CLI Memory Command
  * Memory operations for AgentDB integration
  */
+import { validateAppendConditions } from '../memory/append-conditions.js';
 
 import type { Command, CommandContext, CommandResult } from '../types.js';
 import { output } from '../output.js';

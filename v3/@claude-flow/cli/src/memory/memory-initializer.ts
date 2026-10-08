@@ -1,4 +1,3 @@
-import type { AppendCondition } from './append-conditions.js';
 /**
  * V3 Memory Initializer
  * Properly initializes the memory database with sql.js (WASM SQLite)
@@ -9,6 +8,7 @@ import type { AppendCondition } from './append-conditions.js';
  *
  * @module v3/cli/memory-initializer
  */
+import type { AppendCondition } from './append-conditions.js';
 
 import { loadBetterSqlite3 } from './shared-sqlite.js';
 import { resolveMemoryRoot } from './memory-root.js';
