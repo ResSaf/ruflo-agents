@@ -32,7 +32,7 @@ import {
 // incremental (rowid cursor), non-destructive, transactional, and
 // quick_check-gated, so it's safe to call unconditionally on every tick.
 import { runDistillation, defaultMemoryDbPath, type DistillReport } from './memory-distillation.js';
-import { backupMemoryDb } from './memory-backup.js';
+import { backupProjectMemoryDbs } from './memory-backup.js';
 import { resolveGitWorkspaceIdentity, type GitWorkspaceIdentity } from './git-workspace-identity.js';
 import { getWorkspaceLeaseRegistry } from './workspace-lease.js';
 import { getRepoSupervisorRegistry, type SupervisorRecord } from './repo-supervisor.js';
@@ -1837,8 +1837,8 @@ export class WorkerDaemon extends EventEmitter {
   }
 
   /**
-   * Nightly memory-DB backup worker (24h interval). Takes a WAL-safe, consistent
-   * snapshot of .swarm/memory.db with rotation (keep last N). Never throws — a
+   * Nightly memory-DB backup worker (24h interval). Takes WAL-safe, consistent
+   * snapshots of the active CLI and AgentDB stores with rotation (keep last N). Never throws — a
    * worker must not crash the daemon; a skip/error is written to the metrics
    * file. Opt-out by omitting `backup` from `-w`; offsite GCS is opt-in via
    * RUFLO_BACKUP_GCS (a gs:// prefix), retention via RUFLO_BACKUP_KEEP.
@@ -1851,14 +1851,14 @@ export class WorkerDaemon extends EventEmitter {
     let result: Record<string, unknown>;
     try {
       const keepEnv = Number(process.env.RUFLO_BACKUP_KEEP);
-      const r = await backupMemoryDb({
-        dbPath: defaultMemoryDbPath(this.projectRoot),
+      const r = await backupProjectMemoryDbs(this.projectRoot, {
         keep: Number.isFinite(keepEnv) && keepEnv > 0 ? keepEnv : 7,
         gcs: process.env.RUFLO_BACKUP_GCS || undefined,
       });
       result = {
         timestamp: new Date().toISOString(),
         backedUp: r.backedUp,
+        backups: r.backups,
         path: r.path,
         sizeBytes: r.sizeBytes ?? 0,
         rotatedAway: r.rotatedAway?.length ?? 0,
