@@ -63,7 +63,7 @@ function markdown(summary, meta) {
   for (const [provider, cache] of Object.entries(summary.cache)) lines.push('', `Cache hit ratio · ${provider}: ${cache.hitRatio === null ? 'n/a' : `${(cache.hitRatio * 100).toFixed(1)}%`}`);
   const dark = Object.entries(summary.unpriced);
   if (dark.length > 0) lines.push('', `Unpriced (NOT counted as $0): ${dark.map(([model, u]) => `${model} (${u.messages} msgs)`).join(', ')} — add them to data/prices.json`);
-  if (summary.approx.length > 0) lines.push('', `Approximate (family fallback price): ${summary.approx.join(', ')}`);
+  if (summary.approx.length > 0) lines.push('', `Approximate (family fallback or list price; Grok subscription billing may differ): ${summary.approx.join(', ')}`);
   lines.push('', 'Claude output tokens come from the transcript, which can under-count streamed output; /usage is authoritative for the live session.');
 
   return lines.join('\n');
