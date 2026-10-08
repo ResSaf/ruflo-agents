@@ -13,6 +13,10 @@ import { dirname, join, resolve, isAbsolute } from 'path';
 import { homedir } from 'os';
 import * as fs from 'fs';
 
+// Syntax guard for worker-name flags forwarded to a background child.
+// The start action validates the names against the daemon's supported workers.
+const WORKERS_RE = /^[a-z][a-z0-9_-]*(,[a-z][a-z0-9_-]*)*$/;
+
 // Start daemon subcommand
 const startCommand: Command = {
   name: 'start',
@@ -74,14 +78,6 @@ const startCommand: Command = {
 
     // Parse resource threshold overrides from CLI flags
     const config: Partial<DaemonConfig> = {};
-    if (ctx.flags.workers !== undefined) {
-      try {
-        config.enabledWorkers = parseEnabledWorkers(ctx.flags.workers as string);
-      } catch (error) {
-        if (!quiet) output.printError((error as Error).message);
-        return { success: false, exitCode: 1 };
-      }
-    }
 
     // #2661: thread --headless into DaemonConfig so it actually gates the
     // headless executor. Previously the flag was forwarded to the forked
@@ -130,6 +126,15 @@ const startCommand: Command = {
         config.ttlMs = parseInt(rawTtl, 10) * 1000;
       } else if (!quiet) {
         output.printWarning(`Ignoring invalid --ttl value: ${sanitize(rawTtl)}`);
+      }
+    }
+
+    if (ctx.flags.workers !== undefined) {
+      try {
+        config.enabledWorkers = parseEnabledWorkers(ctx.flags.workers as string);
+      } catch (error) {
+        if (!quiet) output.printError((error as Error).message);
+        return { success: false, exitCode: 1 };
       }
     }
 
@@ -540,7 +545,6 @@ async function startBackgroundDaemon(projectRoot: string, quiet: boolean, forwar
   // through — argv goes straight to a forked process so reject anything
   // that doesn't look like a comma-separated worker-name list or one of
   // the allowed sandbox modes.
-  const WORKERS_RE = /^[a-z][a-z0-9_-]*(,[a-z][a-z0-9_-]*)*$/;
   if (typeof workers === 'string' && workers.length > 0 && WORKERS_RE.test(workers)) {
     forkArgs.push('--workers', workers);
   }

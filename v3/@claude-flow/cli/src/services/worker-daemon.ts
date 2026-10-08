@@ -134,8 +134,12 @@ export interface DaemonConfig {
   // .claude-flow/config.json, or RUFLO_DAEMON_AI_WORKERS=1.
   aiWorkersEnabled: boolean;
   workers: WorkerConfig[];
-  /** Explicit selection overrides restored enabled flags; omitted preserves saved state. */
-  enabledWorkers?: readonly WorkerType[];
+  // #3547 (#1968 follow-up): explicit `daemon start --workers <list>`
+  // selection. When set, only these worker types are enabled — applied
+  // after daemon-state.json restore (initializeWorkerStates) so a stale
+  // saved state can never re-enable a worker the operator just deselected.
+  // Undefined means "no explicit selection": DEFAULT_WORKERS/state decide.
+  enabledWorkers?: string[];
 }
 
 // Worker configuration with staggered offsets to prevent overlap
@@ -329,6 +333,7 @@ export class WorkerDaemon extends EventEmitter {
         ?? fileConfig.aiWorkersEnabled
         ?? (process.env.RUFLO_DAEMON_AI_WORKERS === '1'),
       workers: (config?.workers ?? DEFAULT_WORKERS).map(worker => ({ ...worker })),
+      enabledWorkers: config?.enabledWorkers,
     };
 
     // #2935 — deferred from readDaemonConfigFromFile(): this.config (and
@@ -359,10 +364,6 @@ export class WorkerDaemon extends EventEmitter {
 
     // Initialize worker states
     this.initializeWorkerStates();
-    if (config?.enabledWorkers !== undefined) {
-      const selected = new Set(config.enabledWorkers);
-      for (const worker of this.config.workers) worker.enabled = selected.has(worker.type);
-    }
 
     // Initialize headless executor (async, non-blocking) — capture the
     // promise so the trigger path (#2251) can await it before checking
@@ -867,6 +868,18 @@ export class WorkerDaemon extends EventEmitter {
         }
       } catch {
         // Ignore parse errors, start fresh
+      }
+    }
+
+    // #3547 (#1968 follow-up): an explicit `--workers` selection wins over
+    // both DEFAULT_WORKERS and whatever daemon-state.json just restored
+    // above — otherwise `daemon start --workers map,audit` always ran the
+    // full default set (or a stale saved selection) because nothing ever
+    // applied the requested list to `enabled`.
+    if (this.config.enabledWorkers) {
+      const selected = new Set(this.config.enabledWorkers);
+      for (const workerConfig of this.config.workers) {
+        workerConfig.enabled = selected.has(workerConfig.type);
       }
     }
 
