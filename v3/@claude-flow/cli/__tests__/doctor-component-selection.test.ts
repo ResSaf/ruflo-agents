@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { createRequire } from 'node:module';
+import Module, { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,13 +24,22 @@ describe.skipIf(process.platform === 'win32')('doctor component selection', () =
     for (const name of ['cli', 'cli-core', 'security']) {
       cpSync(join(cli, '..', name, 'src'), join(source, name, 'src'), { recursive: true });
     }
-    runner = requireHere.resolve('vitest/vitest.mjs');
+    runner = join(dirname(requireHere.resolve('vitest/package.json')), 'vitest.mjs');
     semver = requireHere.resolve('semver');
     nativeSqlite = requireHere.resolve('better-sqlite3');
     // Physical source isolation keeps optional providers genuinely absent.
-    const isolatedRequire = createRequire(join(source, 'cli', 'package.json'));
-    for (const name of ['ruvector', '@ruvector/sona', '@huggingface/transformers', '@xenova/transformers', 'agentic-flow']) {
-      expect(() => isolatedRequire.resolve(name)).toThrow();
+    // pnpm's .bin shim exports NODE_PATH with every workspace dependency; drop it so the
+    // absence check sees only what a clean install would resolve.
+    const savedNodePath = process.env.NODE_PATH;
+    delete process.env.NODE_PATH; (Module as any)._initPaths();
+    try {
+      const isolatedRequire = createRequire(join(source, 'cli', 'package.json'));
+      for (const name of ['ruvector', '@ruvector/sona', '@huggingface/transformers', '@xenova/transformers', 'agentic-flow']) {
+        expect(() => isolatedRequire.resolve(name)).toThrow();
+      }
+    } finally {
+      if (savedNodePath !== undefined) process.env.NODE_PATH = savedNodePath;
+      (Module as any)._initPaths();
     }
   });
   afterAll(() => { if (owned) rmSync(owned, { recursive: true, force: true }); });

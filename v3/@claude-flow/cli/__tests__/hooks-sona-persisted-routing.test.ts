@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
+import Module, { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -20,13 +20,22 @@ beforeAll(() => {
   for (const name of ['cli', 'cli-core', 'security', 'shared']) {
     cpSync(join(cli, '..', name, 'src'), join(source, name, 'src'), { recursive: true });
   }
-  runner = requireHere.resolve('vitest/vitest.mjs');
+  runner = join(dirname(requireHere.resolve('vitest/package.json')), 'vitest.mjs');
   sqlJs = requireHere.resolve('sql.js');
   nativeSqlite = requireHere.resolve('better-sqlite3');
   // Keep optional model packages absent. No replacements or model downloads.
-  const isolatedRequire = createRequire(join(source, 'cli', 'package.json'));
-  for (const specifier of ['ruvector', '@ruvector/sona', '@huggingface/transformers', '@xenova/transformers', 'agentic-flow']) {
-    expect(() => isolatedRequire.resolve(specifier)).toThrow();
+  // pnpm's .bin shim exports NODE_PATH with every workspace dependency; drop it so the
+  // absence check sees only what a clean install would resolve.
+  const savedNodePath = process.env.NODE_PATH;
+  delete process.env.NODE_PATH; (Module as any)._initPaths();
+  try {
+    const isolatedRequire = createRequire(join(source, 'cli', 'package.json'));
+    for (const specifier of ['ruvector', '@ruvector/sona', '@huggingface/transformers', '@xenova/transformers', 'agentic-flow']) {
+      expect(() => isolatedRequire.resolve(specifier)).toThrow();
+    }
+  } finally {
+    if (savedNodePath !== undefined) process.env.NODE_PATH = savedNodePath;
+    (Module as any)._initPaths();
   }
 });
 afterAll(() => { if (owned) rmSync(owned, { recursive: true, force: true }); });
