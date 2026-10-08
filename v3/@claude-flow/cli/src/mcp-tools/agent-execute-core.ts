@@ -244,9 +244,9 @@ export async function callAnthropicMessages(input: AnthropicCallInput): Promise<
   }
   const model = input.model || DEFAULT_ANTHROPIC_MODEL;
   const startedAt = Date.now();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), input.timeoutMs || 60000);
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), input.timeoutMs || 60000);
     const baseUrl = (process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com').replace(/\/+$/, '');
     const res = await fetch(`${baseUrl}/v1/messages`, {
       method: 'POST',
@@ -278,7 +278,6 @@ export async function callAnthropicMessages(input: AnthropicCallInput): Promise<
       }),
       signal: controller.signal,
     });
-    clearTimeout(timer);
     if (!res.ok) {
       const errText = await res.text().catch(() => '<unreadable error body>');
       return { success: false, model, error: `Anthropic API error ${res.status}: ${errText.slice(0, 400)}` };
@@ -314,6 +313,8 @@ export async function callAnthropicMessages(input: AnthropicCallInput): Promise<
       error: err instanceof Error ? err.message : String(err),
       durationMs: Date.now() - startedAt,
     };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -347,9 +348,9 @@ async function callOllamaCompat(
   // (the daemon binds to 11434 with no auth by default), but Ollama Cloud
   // does. Send the bearer when the key is non-empty AND looks cloud-shaped.
   const sendAuth = !!input.apiKey && input.apiKey !== 'local';
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), input.timeoutMs || 60000);
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), input.timeoutMs || 60000);
     const res = await fetch(url, {
       method: 'POST',
       headers: {
@@ -369,7 +370,6 @@ async function callOllamaCompat(
       }),
       signal: controller.signal,
     });
-    clearTimeout(timer);
     if (!res.ok) {
       const errText = await res.text().catch(() => '<unreadable error body>');
       return { success: false, model, error: `Ollama API error ${res.status} at ${url}: ${errText.slice(0, 400)}` };
@@ -409,6 +409,8 @@ async function callOllamaCompat(
       error: err instanceof Error ? err.message : String(err),
       durationMs: Date.now() - startedAt,
     };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -433,9 +435,9 @@ async function callOpenAICompat(
   const startedAt = Date.now();
   const base = input.baseUrl.replace(/\/+$/, '');
   const url = `${base}/v1/chat/completions`;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), input.timeoutMs || 60000);
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), input.timeoutMs || 60000);
     const messages: Array<{ role: string; content: string }> = [];
     if (input.systemPrompt) messages.push({ role: 'system', content: input.systemPrompt });
     messages.push({ role: 'user', content: input.prompt });
@@ -457,7 +459,6 @@ async function callOpenAICompat(
       }),
       signal: controller.signal,
     });
-    clearTimeout(timer);
     if (!res.ok) {
       const errText = await res.text().catch(() => '<unreadable error body>');
       return { success: false, model, error: `${input.providerLabel} API error ${res.status}: ${errText.slice(0, 400)}` };
@@ -490,6 +491,8 @@ async function callOpenAICompat(
       error: err instanceof Error ? err.message : String(err),
       durationMs: Date.now() - startedAt,
     };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
