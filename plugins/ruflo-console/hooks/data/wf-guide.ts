@@ -17,6 +17,7 @@ import { cleanText } from './wf-clean'
 import { membersOf } from './hive'
 import type { AgentRecord, ClaimRecord, HiveAgentRecord, HiveInfo, SwarmInfo, TaskRecord } from './parse'
 import { idOf, plain } from './parse'
+import { taskStatusOf } from './automate'
 import type { WfAgent, WfRun } from './workflows'
 
 export type NestKind = 'swarm' | 'hive' | 'queen' | 'worker' | 'claim' | 'task' | 'note'
@@ -24,7 +25,8 @@ export type NestRow = { depth: number; kind: NestKind; label: string; detail: st
 
 const MAX_ROWS = 60
 const isOpenClaim = (claim: ClaimRecord): boolean => !/released|completed|cancel/i.test(claim.status)
-const isOpenTask = (task: TaskRecord): boolean => !/completed|failed|cancelled/i.test(task.status)
+// Finished by its canonical status ("complete", "done", "canceled" from older CLIs included) or by the words the regex always matched.
+const isOpenTask = (task: TaskRecord): boolean => !(['completed', 'failed', 'cancelled'].includes(taskStatusOf(task.status)) || /completed|failed|cancelled/i.test(task.status))
 
 /** swarm > hive (queen) > worker > claim > task, each level only from what the stores say; a missing level is a note, never invented. */
 export function nestingOf(input: { swarm: SwarmInfo | null; hive: HiveInfo | null; agents: readonly AgentRecord[]; hiveAgents: readonly HiveAgentRecord[]; claims: readonly ClaimRecord[]; tasks: readonly TaskRecord[] }): NestRow[] {
