@@ -5,10 +5,10 @@
  * fetches a manifest from GitHub).
  */
 import { closeOf } from './json-span'
+import { failureReason } from './failure'
 import { idOf, msOf, numberOf, plain, recordOf, stringOf, valuesOf } from './parse'
 import { own } from './safe'
 import { researchProbe } from './research'
-
 import { CLI_PREFIXES, type CliChoice, type State, type ViewId } from '../state'
 
 export type { ViewId }
@@ -488,13 +488,13 @@ export type ProbeId = (typeof PROBES)[number]['id']
 /** What a probe came to: the last good value and when, and the last error, so a failing source is never drawn as live. */
 export type ProbeResult<T = unknown> = { value: T | null; okAtMs: number | null; error: string | null; errorAtMs: number | null; isRunning: boolean }
 
-/** An empty offline npm cache needs one explicit install; probes never download it themselves. An absent optional package answers exit 0 with `{degraded: true, reason}` (ADR-150): say so. */
+/** An empty offline npm cache needs one explicit install; probes never download it themselves. An absent optional package answers exit 0 with `{degraded: true, reason}` (ADR-150): say so. A failure names its picked reason (failureReason), not the first stderr line, which is usually the CLI's `[WARN] Skipped helper auto-refresh`. */
 export function probeError(argv: readonly string[], result: { exitCode: number; stdout: string; stderr: string }): string {
   if (result.exitCode === 0) return objectOf(result.stdout)?.degraded === true ? `unavailable: ${plain(objectOf(result.stdout)?.reason, 60) || 'degraded'}` : 'no JSON in the CLI output'
   if (argv[0] === 'npx' && argv.includes('--offline') && argv.includes('@claude-flow/cli@latest') && /\bENOTCACHED\b/.test(`${result.stderr}\n${result.stdout}`)) {
     return 'ruflo CLI not cached; run: npx -y @claude-flow/cli@latest --version'
   }
-  return `exit ${result.exitCode}: ${plain(result.stderr.split('\n').find(line => line.trim() !== '') ?? '', 100) || 'no message'}`
+  return `exit ${result.exitCode}: ${failureReason(result, 100) || 'no message'}`
 }
 
 export const emptyResult = (): ProbeResult => ({ value: null, okAtMs: null, error: null, errorAtMs: null, isRunning: false })

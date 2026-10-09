@@ -9,6 +9,7 @@
 import { ARGV_TEXT_MAX, countOf } from './full-text'
 import { exec, type ActionSpec } from './actions'
 import { jsonAfter } from './data/cli'
+import { countsWith, rowsWith, type Findings } from './data/failure'
 import { plain, recordOf } from './data/parse'
 import { labLines } from './mh-lab'
 import type { State } from './state'
@@ -33,10 +34,12 @@ export type SecEntry = {
   read: Reader
   note?: string
   timeoutMs?: number
+  /** Its "found something" exits and answer shape (ActionSpec.findings), from commands/security.ts. */
+  findings?: Findings
 }
 
 /** A verb that takes the field's text: its id is its palette keyword, so `/ruflo run aid-check <text>` reads the text. */
-export type SecText = { id: string; name: string; about: string; label: string; cost: SecCost; argv: (text: string) => readonly string[] | null; read: Reader; note?: string; rule: string }
+export type SecText = { id: string; name: string; about: string; label: string; cost: SecCost; argv: (text: string) => readonly string[] | null; read: Reader; note?: string; rule: string; findings?: Findings }
 
 export type Check = { status: 'pass' | 'warn' | 'fail'; name: string; message: string }
 
@@ -212,13 +215,32 @@ export const doctorReader =
 export const DOCTOR_COMPONENTS = ['node', 'npm', 'git', 'config', 'daemon', 'memory', 'mcp', 'aidefence', 'disk', 'helpers', 'mods', 'claude'] as const
 
 const LOCAL = '$0, local: reads only'
+// What each verb exits with when it found something, and its answer's shape, checked in commands/security.ts:
+// `scan` returns success false (exit 1) on a critical or high finding after printing {summary, findings}; `defend` exits 1
+// when unsafe or PII is found, after {safe, threats, piiFound}; `channel-scan` exits 2 when flagged after {safe, findings,
+// stats} and `scan-plan` exits 2 when its gate fires after {safe, findings, stats, gateFire} (their exit 1 is a usage
+// error). `secrets` also exits 1 on a finding but prints text only, so it declares nothing: its exit 1 still reads as failed.
+const SEV = ['critical', 'high', 'medium', 'low', 'total'] as const
+const SCAN_FOUND: Findings = {
+  exits: [1],
+  isAnswer: json => rowsWith(json.findings, ['severity', 'type']) && countsWith(json.summary, SEV),
+  found: json => (json.findings as unknown[]).length > 0 && Number(recordOf(json.summary)?.critical) + Number(recordOf(json.summary)?.high) > 0,
+}
+const DEFEND_FOUND: Findings = {
+  exits: [1],
+  isAnswer: json => typeof json.safe === 'boolean' && typeof json.piiFound === 'boolean' && rowsWith(json.threats, ['type', 'severity']),
+  found: json => json.safe === false || json.piiFound === true,
+}
+const channelShape = (json: Record<string, unknown>) => typeof json.safe === 'boolean' && rowsWith(json.findings, ['kind', 'severity', 'reason']) && recordOf(json.stats) !== null
+const CHANNEL_FOUND: Findings = { exits: [2], isAnswer: channelShape, found: json => json.safe === false }
+const PLAN_FOUND: Findings = { exits: [2], isAnswer: json => channelShape(json) && typeof json.gateFire === 'boolean', found: json => json.gateFire === true }
 const SCAN_FILE = (depth: string) => `$0, local: writes .claude/security-scans/scan-code-${depth}.json (the statusline reads it)`
 const NPM_AUDIT = 'reaches the network: npm audit sends this project’s dependency tree to the npm registry'
 
 export const SECURE: readonly SecEntry[] = [
-  { id: 'sec-scan-quick', group: 'scan', name: 'SCAN QUICK', about: 'secrets in source files, local; writes its report', label: 'security scan, quick: secrets in files (writes a report)', cost: 'writes', args: ['security', 'scan', '--depth', 'quick', '--type', 'code', '--output', 'json'], read: scanReader, note: SCAN_FILE('quick'), timeoutMs: 120_000 },
-  { id: 'sec-scan-deep', group: 'scan', name: 'SCAN DEEP', about: 'secrets and code patterns, the whole tree, local', label: 'security scan, deep: secrets and code patterns (writes a report)', cost: 'writes', args: ['security', 'scan', '--depth', 'deep', '--type', 'code', '--output', 'json'], read: scanReader, note: SCAN_FILE('deep'), timeoutMs: 240_000 },
-  { id: 'sec-scan-all', group: 'scan', name: 'SCAN + DEPS', about: 'code plus npm audit of the dependencies', label: 'security scan with dependencies (npm audit, network)', cost: 'network', args: ['security', 'scan', '--depth', 'standard', '--type', 'all', '--output', 'json'], read: scanReader, note: `${NPM_AUDIT}; writes .claude/security-scans/scan-all-standard.json`, timeoutMs: 240_000 },
+  { id: 'sec-scan-quick', group: 'scan', name: 'SCAN QUICK', about: 'secrets in source files, local; writes its report', label: 'security scan, quick: secrets in files (writes a report)', cost: 'writes', args: ['security', 'scan', '--depth', 'quick', '--type', 'code', '--output', 'json'], read: scanReader, findings: SCAN_FOUND, note: SCAN_FILE('quick'), timeoutMs: 120_000 },
+  { id: 'sec-scan-deep', group: 'scan', name: 'SCAN DEEP', about: 'secrets and code patterns, the whole tree, local', label: 'security scan, deep: secrets and code patterns (writes a report)', cost: 'writes', args: ['security', 'scan', '--depth', 'deep', '--type', 'code', '--output', 'json'], read: scanReader, findings: SCAN_FOUND, note: SCAN_FILE('deep'), timeoutMs: 240_000 },
+  { id: 'sec-scan-all', group: 'scan', name: 'SCAN + DEPS', about: 'code plus npm audit of the dependencies', label: 'security scan with dependencies (npm audit, network)', cost: 'network', args: ['security', 'scan', '--depth', 'standard', '--type', 'all', '--output', 'json'], read: scanReader, findings: SCAN_FOUND, note: `${NPM_AUDIT}; writes .claude/security-scans/scan-all-standard.json`, timeoutMs: 240_000 },
   { id: 'sec-cve', group: 'scan', name: 'CVE', about: 'known CVEs in the dependency tree (npm audit)', label: 'security cve --list: CVEs in the dependency tree (network)', cost: 'network', args: ['security', 'cve', '--list'], read: (out, err) => textLines(out, err), note: NPM_AUDIT, timeoutMs: 90_000 },
   { id: 'sec-threats', group: 'scan', name: 'THREATS', about: 'STRIDE threat indicators in this tree', label: 'security threats: STRIDE indicators here', cost: 'read', args: ['security', 'threats'], read: (out, err) => textLines(out, err), note: LOCAL },
   { id: 'sec-secrets', group: 'scan', name: 'SECRETS', about: 'secret patterns by type and file, values masked', label: 'security secrets: secret patterns by file (values masked)', cost: 'read', args: ['security', 'secrets'], read: (out, err) => textLines(out, err), note: LOCAL },
@@ -240,10 +262,10 @@ const asInput = (tool: string) => (text: string) => {
 const PASTE_RULE = '1-8000 printable characters, not starting with -'
 
 export const SECURE_TEXT: readonly SecText[] = [
-  { id: 'aid-check', name: 'CHECK', about: 'prompt injection, jailbreak and PII, built-in engine', label: 'aid-check <text>: injection and PII check, local', cost: 'read', argv: text => (pastedOf(text) === null ? null : ['security', 'defend', '--input', pastedOf(text) ?? '', '--output', 'json']), read: verdictReader('defend'), note: LOCAL, rule: PASTE_RULE },
-  { id: 'aid-quick', name: 'QUICK', about: 'the fast pattern pass only', label: 'aid-quick <text>: quick injection check, local', cost: 'read', argv: text => (pastedOf(text) === null ? null : ['security', 'defend', '--input', pastedOf(text) ?? '', '--quick', '--output', 'json']), read: verdictReader('defend --quick'), note: LOCAL, rule: PASTE_RULE },
-  { id: 'aid-channel', name: 'CHANNEL', about: 'an inter-agent message: injection and encoded payloads', label: 'aid-channel <text>: scan it as an agent message, local', cost: 'read', argv: text => (pastedOf(text) === null ? null : ['security', 'channel-scan', '--message', pastedOf(text) ?? '', '--format', 'json']), read: verdictReader('channel-scan'), note: LOCAL, rule: PASTE_RULE },
-  { id: 'aid-plan', name: 'PLAN', about: 'an agent plan: injected steps (PlanFlip gate)', label: 'aid-plan <text>: scan it as an agent plan, local', cost: 'read', argv: text => (pastedOf(text) === null ? null : ['security', 'scan-plan', '--plan', pastedOf(text) ?? '', '--format', 'json']), read: verdictReader('scan-plan'), note: LOCAL, rule: PASTE_RULE },
+  { id: 'aid-check', name: 'CHECK', about: 'prompt injection, jailbreak and PII, built-in engine', label: 'aid-check <text>: injection and PII check, local', cost: 'read', argv: text => (pastedOf(text) === null ? null : ['security', 'defend', '--input', pastedOf(text) ?? '', '--output', 'json']), read: verdictReader('defend'), findings: DEFEND_FOUND, note: LOCAL, rule: PASTE_RULE },
+  { id: 'aid-quick', name: 'QUICK', about: 'the fast pattern pass only', label: 'aid-quick <text>: quick injection check, local', cost: 'read', argv: text => (pastedOf(text) === null ? null : ['security', 'defend', '--input', pastedOf(text) ?? '', '--quick', '--output', 'json']), read: verdictReader('defend --quick'), findings: DEFEND_FOUND, note: LOCAL, rule: PASTE_RULE },
+  { id: 'aid-channel', name: 'CHANNEL', about: 'an inter-agent message: injection and encoded payloads', label: 'aid-channel <text>: scan it as an agent message, local', cost: 'read', argv: text => (pastedOf(text) === null ? null : ['security', 'channel-scan', '--message', pastedOf(text) ?? '', '--format', 'json']), read: verdictReader('channel-scan'), findings: CHANNEL_FOUND, note: LOCAL, rule: PASTE_RULE },
+  { id: 'aid-plan', name: 'PLAN', about: 'an agent plan: injected steps (PlanFlip gate)', label: 'aid-plan <text>: scan it as an agent plan, local', cost: 'read', argv: text => (pastedOf(text) === null ? null : ['security', 'scan-plan', '--plan', pastedOf(text) ?? '', '--format', 'json']), read: verdictReader('scan-plan'), findings: PLAN_FOUND, note: LOCAL, rule: PASTE_RULE },
   { id: 'aid-scan', name: 'MCP SCAN', about: 'aidefence_scan: the adaptive engine’s full scan', label: 'aid-scan <text>: aidefence_scan (MCP)', cost: 'network', argv: asInput('aidefence_scan'), read: mcpReader('aidefence_scan'), note: AID_MCP, rule: PASTE_RULE },
   { id: 'aid-safe', name: 'IS SAFE', about: 'aidefence_is_safe: one yes or no', label: 'aid-safe <text>: aidefence_is_safe (MCP)', cost: 'network', argv: asInput('aidefence_is_safe'), read: mcpReader('aidefence_is_safe'), note: AID_MCP, rule: PASTE_RULE },
   { id: 'aid-pii', name: 'HAS PII', about: 'aidefence_has_pii: emails, keys, SSNs, passwords', label: 'aid-pii <text>: aidefence_has_pii (MCP)', cost: 'network', argv: asInput('aidefence_has_pii'), read: mcpReader('aidefence_has_pii'), note: AID_MCP, rule: PASTE_RULE },
@@ -269,7 +291,7 @@ export const SECURE_TEXT: readonly SecText[] = [
 export const SECURE_KEYWORDS: readonly string[] = SECURE_TEXT.map(entry => entry.id)
 
 /** An entry as the runner's spec: a read runs at once, the rest ask with their note on the confirm row. */
-export function secSpec(entry: { id: string; label: string; cost: SecCost; read: Reader; note?: string; timeoutMs?: number }, args: readonly string[], state: State): ActionSpec {
+export function secSpec(entry: { id: string; label: string; cost: SecCost; read: Reader; note?: string; timeoutMs?: number; findings?: Findings }, args: readonly string[], state: State): ActionSpec {
   return {
     label: entry.label,
     args,
@@ -279,6 +301,7 @@ export function secSpec(entry: { id: string; label: string; cost: SecCost; read:
     ...(entry.cost === 'read' && { isReadOnly: true }),
     ...(entry.note !== undefined && { note: entry.note }),
     timeoutMs: entry.timeoutMs ?? 90_000,
+    ...(entry.findings !== undefined && { findings: entry.findings }),
   }
 }
 
