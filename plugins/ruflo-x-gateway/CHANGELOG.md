@@ -2,6 +2,9 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-x-gateway`.
 
+## 0.9.5 — 2026-10-09
+- fix: the directory bundle (0.8.2) documentationUrl points at the main branch path, not the feat/ruflo-ai-team branch
+
 ## 0.9.4 — 2026-10-05
 - fix: shared textsOf reports truncation and every guard fails closed on it
 

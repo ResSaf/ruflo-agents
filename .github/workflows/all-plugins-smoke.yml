@@ -18,6 +18,7 @@ on:
       - 'plugins/**'
       - 'scripts/smoke-all-plugins.mjs'
       - 'scripts/audit-plugin-mcp-prefix.mjs'
+      - 'scripts/check-plugin-manifests.mjs'
       - 'scripts/sync-mod-screen.mjs'
       - 'scripts/check-guard-tool-names.mjs'
       - 'scripts/guard-tool-names.allow.json'
@@ -31,6 +32,7 @@ on:
       - 'plugins/**'
       - 'scripts/smoke-all-plugins.mjs'
       - 'scripts/audit-plugin-mcp-prefix.mjs'
+      - 'scripts/check-plugin-manifests.mjs'
       - 'scripts/sync-mod-screen.mjs'
       - 'scripts/check-guard-tool-names.mjs'
       - 'scripts/guard-tool-names.allow.json'
@@ -108,6 +110,12 @@ jobs:
         # Each plugin's own smoke checks its own skills; this catches
         # violations that escape per-plugin coverage (new plugin without
         # smoke, new skill without smoke-list update, etc.).
+
+      - name: claude.ai plugin-validator static check
+        run: node scripts/check-plugin-manifests.mjs
+        # Unknown plugin.json keys, nested .claude-plugin/plugin.json under a
+        # plugin, and <tag>-like text in SKILL.md descriptions: the three
+        # things the claude.ai upload validator skips or warns on.
 
       - name: Fleet-wide plugin.json manifest audit (iter 88)
         run: node scripts/audit-plugin-manifest.mjs
