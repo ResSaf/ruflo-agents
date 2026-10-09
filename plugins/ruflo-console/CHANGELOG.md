@@ -2,6 +2,15 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-console`.
 
+## 0.40.6 — 2026-10-09
+- fix: times read as times and a swarm reads as itself: the AgentDB mod's "written" age no longer shows 100020735d ago or 0s for a future stamp (it reads n/a), a swarm's agent count and status agree on Overview, Swarm, the topology graph, the status bar and Workflows (a swarm with no listed members says so; "stalled" needs evidence, not just an old record), Workflows agent ages show days, and `mission-goal` says it replaces the goal instead of "nothing is written" (#3935, #3936, thanks @proffesor-for-testing)
+
+## 0.40.5 — 2026-10-09
+- fix: a verdict command's "found something" exit (security scans, AIDefence checks, MetaHarness mcp-scan, threat-model and drift) is an answer, not a failure: Claude is told what was found, and a failed run names its real reason (the [ERROR] line, a wrapped tool error) instead of the CLI's [WARN] banner; the answer is read out of stdout in bounded time (#3933, #3934, thanks @proffesor-for-testing)
+
+## 0.40.4 — 2026-10-09
+- fix: a task an older CLI stored as "complete", "done", "canceled" or "running" reads as its canonical state everywhere the console decides on status: the kanban lane, Mission Control (it is never handed to Claude again), mission cancel, and the workflow task links (#3931, #3932, thanks @proffesor-for-testing)
+
 ## 0.40.3 — 2026-10-08
 - fix: the approvals badge (band "n to approve", menu badge, change notices, and the Approvals header) counts only rows a person can act on; a refused mod or a permission deny has no approve or deny action, stays listed on the page as a notice, and no longer holds the badge up with nothing to press (#3920)
 

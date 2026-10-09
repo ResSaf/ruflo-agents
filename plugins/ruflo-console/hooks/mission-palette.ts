@@ -30,7 +30,9 @@ export function missionPalette(state: State): PaletteEntry[] {
   const tasks = () => state.snapshot?.tasks ?? []
 
   return [
-    { id: 'mission-goal', group: 'missions', label: 'mission-goal <goal>: plan a goal as a SPARC goal-oriented plan (nothing is written)', run: text('mission-goal', value => local('plan the goal', () => planGoal(state, value, wired), 'write')) },
+    // Declared 'write', like console_set goal: it REPLACES Mission Control's goal and plan (in memory: no file, no mission). The label says so
+    // rather than "nothing is written", which contradicted the gate asking for write control.
+    { id: 'mission-goal', group: 'missions', label: 'mission-goal <goal>: set the goal and plan it as a SPARC goal-oriented plan (replaces the current goal; no file, no mission yet)', run: text('mission-goal', value => local('plan the goal', () => planGoal(state, value, wired), 'write')) },
     { id: 'mission-status', group: 'missions', label: 'mission status: progress, each task’s status, what is next', run: spec(() => local('mission status', () => undefined)) },
     { id: 'mission-create', group: 'missions', label: 'create the mission and its tasks from the planned goal (asks first)', run: { kind: 'spec' as const, spec: wired === undefined || blocksCreate(mcOf(state).screen) ? null : createSpec(state, wired.host, () => undefined), why: createWhy(state) ?? why } },
     {

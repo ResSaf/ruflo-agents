@@ -6,6 +6,7 @@
 import type { AuditTrend, HarnessScore, Intelligence } from '../data/cli'
 import { recentByAgent } from '../data/events'
 import { agentLabels } from '../data/parse'
+import { swarmStatusOf } from '../data/swarm-status'
 import { getBootChecks } from '../boot-checks'
 import { bootFacts } from '../boot-facts'
 import { getBuild } from '../build'
@@ -40,12 +41,14 @@ import { watchOf } from '../watch'
 const AXIS: Record<string, string> = { harnessFit: 'fit', compileConfidence: 'compile', taskCoverage: 'coverage', toolSafety: 'safety', memoryUsefulness: 'memory' }
 
 /** The swarm as a graph: the hive's queen leads where there is one, else the swarm itself stands at the root. */
-export function topoModelOf(snapshot: Snapshot | null, pulses: Map<string, number> = new Map()): TopoModel | null {
+export function topoModelOf(snapshot: Snapshot | null, pulses: Map<string, number> = new Map(), nowMs: number = Date.now()): TopoModel | null {
   const swarm = snapshot?.swarm ?? null
 
   if (snapshot === null || (swarm === null && snapshot.hive === null && snapshot.agents.length === 0)) return null
 
-  const members = swarm !== null && swarm.agentIds.length > 0 ? snapshot.agents.filter(agent => swarm.agentIds.includes(agent.id)) : snapshot.agents
+  // A swarm's members are the ids its record lists, even none: the agent store holds every agent ever spawned and is not this swarm.
+  const status = swarm === null ? null : swarmStatusOf(swarm, nowMs, snapshot.agents)
+  const members = status !== null ? snapshot.agents.filter(agent => status.ids.includes(agent.id)) : snapshot.agents
   const labels = agentLabels(snapshot.agents)
   const leaderId = snapshot.hive?.queen ?? swarm?.id ?? 'swarm'
   const leaderPulse = pulses.get(leaderId)
@@ -53,7 +56,7 @@ export function topoModelOf(snapshot: Snapshot | null, pulses: Map<string, numbe
   return {
     topology: swarm?.topology ?? snapshot.hive?.topology ?? 'hierarchical',
     nodes: [
-      { id: leaderId, label: snapshot.hive?.queen !== undefined ? 'queen' : 'swarm', status: snapshot.hive?.queen !== undefined ? 'leader' : (swarm?.status ?? 'unknown'), isLeader: true, ...(leaderPulse !== undefined && { pulseAtMs: leaderPulse }) },
+      { id: leaderId, label: snapshot.hive?.queen !== undefined ? 'queen' : 'swarm', status: snapshot.hive?.queen !== undefined ? 'leader' : (status?.shown ?? 'unknown'), isLeader: true, ...(leaderPulse !== undefined && { pulseAtMs: leaderPulse }) },
       ...members.slice(0, MAX_NODES - 1).map(agent => {
         const pulseAtMs = pulses.get(agent.id)
 
@@ -195,7 +198,7 @@ export function picturesOf(state: State, columns: number, nowMs: number, t: numb
       pictures.set('activity', activityPicture([{ label: 'tool calls/5s', values: state.activity }, { label: 'state writes', values: state.writes }], width, t))
       break
     case 'swarm': {
-      const model = topoModelOf(snapshot, recentByAgent(state.events, nowMs, PULSE_MS + 600))
+      const model = topoModelOf(snapshot, recentByAgent(state.events, nowMs, PULSE_MS + 600), nowMs)
 
       if (model !== null) pictures.set('topology', topologyPicture(model, width, topologyRows(width, model.nodes.length), t))
       break

@@ -2,6 +2,9 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; this is the whole history.
 
+## 0.2.5 — 2026-10-09
+- fix: seven harness-* skill descriptions no longer carry angle-bracket placeholders (claude.ai strips them as XML tags)
+
 ## 0.2.4 — 2026-10-07
 - fix: run the installed ruflo CLI before `npx @claude-flow/cli@latest` in cost-tracker, adr and metaharness
 - chore: 3.55.0 versions, leaf pins, lockfiles, plugin bumps, changelog

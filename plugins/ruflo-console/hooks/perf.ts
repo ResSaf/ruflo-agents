@@ -127,6 +127,8 @@ export const reportReader: Reader = (stdout, stderr, state) => {
 }
 
 const LOCAL = '$0, local: measures in-process and writes nothing'
+// The note is read by Claude's gate (model-tools.ts classOf). "removes" is deliberate: these entries delete the probe file they write, and the
+// gate classes them 'delete' (full control). A reword that drops the word would lower the gate, so it stays and a spec pins the class.
 const PROBE = '$0, local: writes and removes a 4 KB probe file in .claude-flow/performance/'
 
 export const PERF: readonly PerfEntry[] = [

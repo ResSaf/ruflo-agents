@@ -10,6 +10,7 @@ import type { RenderElement } from 'claude-code'
 
 import { alertsOf, waitingApprovalsOf } from '../data/alerts'
 import { agentLabels } from '../data/parse'
+import { swarmStatusOf } from '../data/swarm-status'
 import { secMemo } from '../secure'
 import type { State, ViewId } from '../state'
 import { sparkline } from '../memory-lines'
@@ -139,9 +140,12 @@ export function barParts(state: State, nowMs: number = Date.now()): BarPart[] {
 
   // Nothing moving: say so, with how many agents stand ready. (When something did happen, the last event is a standing part below.)
   if (!parts.some(part => part.tone === 'live') && !isFresh && snap?.swarm != null) {
-    const ready = snap.agents.length
+    // The swarm's own members (data/swarm-status.ts), not the agent store (every agent ever spawned, in any swarm). Only an agent the store
+    // holds can be "ready": a listed id it lacks is counted as listed, never as ready.
+    const { listed, found } = swarmStatusOf(snap.swarm, nowMs, snap.agents)
+    const note = listed === found ? '' : ` (${listed} listed, ${found} found)`
 
-    parts.push({ text: ready > 0 ? `idle · ${ready} agent${ready === 1 ? '' : 's'} ready` : 'swarm, no agents', tone: 'plain', go: 'swarm' })
+    parts.push({ text: found > 0 ? `idle · ${found} agent${found === 1 ? '' : 's'} ready${note}` : listed > 0 ? `swarm, ${listed} listed, none found` : 'swarm, no agents', tone: 'plain', go: 'swarm' })
   }
 
   // Standing context, on its own row: the last tool call or event with how long ago (it used to vanish after a minute, taking what Claude

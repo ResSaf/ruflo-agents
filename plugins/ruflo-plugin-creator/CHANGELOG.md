@@ -2,6 +2,9 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; this is the whole history.
 
+## 0.4.2 — 2026-10-09
+- fix: the mod template's manifest is plugin.json.tmpl, so the claude.ai validator no longer reads templates/mod as a nested plugin; scripts/scaffold-mod.mjs scaffolds it and a smoke step validates and tests the result
+
 ## 0.4.1 — 2026-10-05
 - feat: status contract in the create-mod template (0.4.1)
 
