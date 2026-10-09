@@ -1413,7 +1413,10 @@ export async function ensureSchemaColumns(dbPath: string, options: { encryptWrit
       if (columnsAdded.includes('status') || existingColumns.has('status')) {
         try {
           db.run(`UPDATE memory_entries SET status = 'active' WHERE status IS NULL`);
-          modified = true;
+          // #3918: only a backfill that changed rows dirties the image. Setting
+          // this unconditionally rewrote every up-to-date store on each open (and,
+          // with encryption at rest, with a fresh nonce, so the bytes changed too).
+          if (db.getRowsModified() > 0) modified = true;
         } catch {
           /* table is read-only or doesn't exist — skip */
         }
