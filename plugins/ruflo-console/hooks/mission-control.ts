@@ -12,6 +12,7 @@ import { PHASE_NAME, plan as planOf, stageOf, type Plan, type Profile, profileOf
 import { capGate, capOf, refreshCost } from './mission-guard'
 import type { Host } from './host'
 import { plain, type TaskRecord } from './data/parse'
+import { taskStatusOf } from './data/automate'
 import { keepText } from './field-keep'
 import { checkLimit, keepLines, LONG_TEXT_MAX, withBreaks } from './full-text'
 import { isAvailable, MISSION_SKILLS, slashOf, GOALS_PLUGIN } from './mission-skills'
@@ -75,7 +76,8 @@ export function derive(mission: MissionRecord, tasks: readonly TaskRecord[]): Ma
   const out = new Map<string, Derived>()
 
   for (const task of mission.tasks) {
-    const status = rufloTaskOf(tasks, task)?.status
+    // Read through taskStatusOf: a task stored as "complete" by an older CLI is done, never handed to Claude again.
+    const status = taskStatusOf(rufloTaskOf(tasks, task)?.status)
     const done = (id: string) => out.get(id) === 'done'
 
     out.set(task.id, status === 'completed' ? 'done' : status === 'failed' ? 'failed' : status === 'cancelled' ? 'cancelled' : status === 'in_progress' || status === 'running' ? 'running' : task.dependsOn.every(done) ? 'ready' : 'waiting')
