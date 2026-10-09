@@ -7,7 +7,7 @@
  * entry with nothing to say gets none, never a zero.
  */
 import { activeMission, progressOf } from './mission-control'
-import { alertsOf, approvalsOf } from './data/alerts'
+import { alertsOf, waitingApprovalsOf } from './data/alerts'
 import { secMemo } from './secure'
 import type { State, ViewId } from './state'
 import { hasUnseen } from './whatsnew'
@@ -24,7 +24,7 @@ export type Badge = { text: string; tone: 'attention' | 'plain' }
 export function badgesOf(state: State, nowMs: number): Partial<Record<ViewId, Badge>> {
   const out: Partial<Record<ViewId, Badge>> = {}
   const snap = state.snapshot
-  const approvals = approvalsOf(state).length
+  const approvals = waitingApprovalsOf(state).length
   const alerts = alertsOf(state, nowMs, state.loadedAtMs).filter(alert => alert.level !== 'info').length
   const mission = activeMission(state)
   const busy = snap?.agents.filter(agent => /busy|active|working/i.test(agent.status)).length ?? 0
