@@ -2,6 +2,14 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-ai-team`.
 
+## 0.3.0 — 2026-10-09
+- feat: skills, commands and agents name the connector tools in plain language instead of Claude Code namespaced identifiers (allowed-tools lists only the portable Read tool; the repo audit requires the field), so they read correctly on claude.ai and Cowork
+- feat: lifecycle skill covers run_complete (the tasks_incomplete rule); skills state the real status values, template ids and budget range
+- feat: README gains examples per surface, what you need, how auth works and what leaves your machine, and troubleshooting
+- fix: descriptions lead with what the item does and when to use it, with no angle brackets, and drop wording the service cannot back
+- fix: directory bundle skills, commands and agents resynced with the plugin (bundle manifest 0.1.0 to 0.2.0, two added keywords)
+- chore: smoke asserts no namespaced tool names, no angle brackets in descriptions, README examples use real commands, bundle copies identical
+
 ## 0.2.3 — 2026-10-09
 - fix: documentationUrl points at the main branch path, not the feat/ruflo-ai-team branch
 
