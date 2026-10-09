@@ -45,6 +45,7 @@ import { UPDATES_KEY } from './updates'
 import { setToastMode, toggleToastMute } from './toasts'
 import { whatsnewActions } from './whatsnew'
 import { adrActions } from './adr-actions'
+import { sessionActions } from './sessions'
 import { vectorActions } from './vector'
 import type { Actions } from './views/common'
 import { openTasks, selection } from './views/select'
@@ -405,6 +406,7 @@ export function actionsOf(state: State, host: Host, runner: Runner, steps: Steps
     watch: watchActions(state, () => host.invalidate(), (question, view) => actions.ask.ask(question, view)),
     events: eventsActions(state, host, () => host.invalidate(), (spec, why = 'that cannot run here') => runner.ask(spec, why), question => actions.ask.ask(question, 'events')),
     timeline: timelineActions(state, host, () => host.invalidate(), id => setView(id), (spec, why = 'that cannot run here') => runner.ask(spec, why), question => actions.ask.ask(question, 'timeline')),
+    sessions: sessionActions(state, host),
     room: roomActions(state, () => host.invalidate(), (id, text) => runner.runById(id, text), () => roomPages(state)),
     navigator: navActions(state, () => host.invalidate(), view => actions.view(view)),
     catalog: catalogActions(state, host, runner, text => actions.term.load('claude', text)),

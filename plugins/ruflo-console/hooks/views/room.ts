@@ -10,6 +10,7 @@ import { lanesOf } from './frames'
 import { VIEWS, type ViewId } from '../state'
 import { statsOf } from './manage'
 import { modsRows } from './mods'
+import { sessionRows } from './sessions'
 
 const TONE_COLOR = { ok: THEME.ok, warn: THEME.warn, bad: THEME.bad, info: THEME.info } as const
 const SOURCES: readonly { id: 'all' | RoomSource; label: string }[] = [
@@ -61,6 +62,7 @@ export function roomView(ctx: Ctx): RenderElement {
     rows.push(text(ctx, `   expects: ${banner.expect}${banner.view === null ? '' : ` · raised on ${banner.view}`} · ${banner.leftS}s left to answer${banner.leftS === 0 ? ' (too late: it will not run, ask again)' : ''}`, { color: TONE_COLOR[banner.tone] }))
   }
 
+  rows.push(...sessionRows(ctx))
   rows.push(rule(ctx, 'Say something', 'each asks first, as anywhere else'))
 
   const Input = ctx.kit.Input
