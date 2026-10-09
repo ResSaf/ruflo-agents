@@ -10,7 +10,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { probeError } from '../hooks/data/cli'
-import { failureReason, isFindingsExit, reasonLine } from '../hooks/data/failure'
+import { failureReason, isFindingsExit, judgeFindings, reasonLine } from '../hooks/data/failure'
 import type { Host } from '../hooks/host'
 import { LAB, labSpec } from '../hooks/mh-lab'
 import { evidenceEvent, parseGates } from '../hooks/mission-verify'
@@ -445,5 +445,13 @@ describe('a wrapped MCP failure (exit 0, isError) names its own error', () => {
 
     expect(state.outcome?.ok).toBe(false)
     expect(state.outcome?.detail).toBe('Error: Failed to initialize @ruvector/rvagent-wasm: ERR_MODULE_NOT_FOUND')
+  })
+
+  it('reading an answer out of hostile stdout is bounded: 100k unclosed openers cost a few scans, not one each', () => {
+    const findings = { exits: [1], isAnswer: () => false, found: () => true }
+    const start = Date.now()
+
+    expect(judgeFindings(findings, { stdout: '{\n'.repeat(100_000) }).answer).toBeNull()
+    expect(Date.now() - start).toBeLessThan(1_000)
   })
 })

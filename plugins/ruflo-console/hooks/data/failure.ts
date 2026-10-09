@@ -97,10 +97,12 @@ function answerIn(isAnswer: Findings['isAnswer'], stdout: string): { json: Recor
 
   for (let match = starts.exec(text); match !== null && tried < MAX_CANDIDATES; match = starts.exec(text)) {
     const start = match.index + match[0].length - 1
+    // Counted before the scan: an opener that never closes costs a scan of the rest, so it must use up an attempt too (else n openers cost n scans).
+    tried += 1
+
     const end = closeOf(text, start)
 
     if (end < 0) continue
-    tried += 1
 
     let json: Record<string, unknown> | null = null
 
