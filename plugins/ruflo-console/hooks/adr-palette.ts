@@ -6,7 +6,7 @@
  */
 import type { ActionSpec } from './actions'
 import { adrOf, docByNumber, initSpec, proposeSpec } from './adr'
-import { adrWired } from './adr-actions'
+import { adrWired, titleFit } from './adr-actions'
 import { STATUSES, type AdrStatus } from './data/adr'
 import { plain } from './data/parse'
 import type { PaletteEntry } from './palette'
@@ -52,7 +52,20 @@ export function adrPalette(state: State): PaletteEntry[] {
       }),
     },
     { id: 'adr-init', group: 'adrs', label: 'initialise ADRs here: create the folder and a first record (asks first, never overwrites)', run: { kind: 'spec', spec: wired === undefined ? null : initSpec(state, wired.host, today()), why: adrOf(state).dir === null ? why : 'this project already has an ADR folder' } },
-    { id: 'adr-propose', group: 'adrs', label: 'adr-propose <title>: write a new proposed ADR in the project’s style (asks first, shows the file)', run: text('adr-propose', value => (wired === undefined ? null : proposeSpec(state, wired.host, value, today()))) },
+    {
+      id: 'adr-propose',
+      group: 'adrs',
+      label: 'adr-propose <title>: write a new proposed ADR in the project’s style (asks first, shows the file)',
+      // A title over the limit is refused with its count, never cut (ADR-481): `/ruflo run` and console_run reach this, not the page's field.
+      run: {
+        ...text('adr-propose', value => (wired === undefined || !titleFit(value).ok ? null : proposeSpec(state, wired.host, value, today()))),
+        why: (value: string) => {
+          const fit = titleFit(value)
+
+          return wired !== undefined && !fit.ok ? fit.message : why
+        },
+      },
+    },
     status('adr-accept', 'mark a proposed ADR accepted'),
     status('adr-reject', 'mark a proposed ADR rejected'),
     status('adr-deprecate', 'mark an accepted ADR deprecated'),

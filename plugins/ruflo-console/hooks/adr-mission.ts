@@ -149,5 +149,12 @@ export function draftSpec(state: State, host: Pick<Host, 'fs' | 'run' | 'invalid
   const results = new Map<string, string>(finished.flatMap(event => (event.taskId !== undefined && event.note !== undefined ? [[event.taskId, event.note] as [string, string]] : [])))
   const draft = draftFromMission({ objective: mission.objective, tasks: mission.tasks.map(task => ({ title: task.title, ...(results.has(task.id) && { result: results.get(task.id) as string }) })) }, attachedDocs(state, mission).flatMap(doc => doc.scope.slice(0, 2)), today)
 
-  return proposeSpec(state, host, draft.title, today, { ...(draft.context !== undefined && { context: draft.context }), ...(draft.decision !== undefined && { decision: draft.decision }), scope: draft.scope ?? [] })
+  const spec = proposeSpec(state, host, draft.title, today, { ...(draft.context !== undefined && { context: draft.context }), ...(draft.decision !== undefined && { decision: draft.decision }), scope: draft.scope ?? [] })
+
+  // A title is one line; an objective can be a paragraph. When it was shortened, the confirm says so and by how much (ADR-481).
+  if (spec === null || draft.titleShortenedFrom === undefined) return spec
+
+  const said = `The title was shortened from the mission's objective: ${draft.titleShortenedFrom} → ${Array.from(draft.title).length} characters; the full objective is in the record's Context.`
+
+  return { ...spec, note: `${said} ${spec.note ?? ''}`.trim() }
 }

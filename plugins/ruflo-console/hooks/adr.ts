@@ -9,7 +9,7 @@ import type { ActionSpec } from './actions'
 import { replaceFile } from './activity-io'
 import { indexOf, lint, MAX_FILE, MAX_FILES, parseAdr, type AdrDoc, type AdrStatus, type Finding, type Registry, STATUSES } from './data/adr'
 import { checkScope, digestBlock, reportLines, suggest, type ScopeReport, type Suggestion } from './data/adr-scope'
-import { adrDirText, detectStyle, draftFromMission, fileNameFor, initialRecord, lineDiff, nextNumber, renderNew, titleText, withStatus, withSupersedes, type Style, type StyleName } from './data/adr-write'
+import { adrDirText, detectStyle, draftFromMission, fileNameFor, initialRecord, lineDiff, nextNumber, renderNew, titleClean, titleFit, withStatus, withSupersedes, type Style, type StyleName } from './data/adr-write'
 import { record as recordEvents } from './data/events'
 import { readBounded, type ReadCache } from './data/files'
 import { plain } from './data/parse'
@@ -233,9 +233,10 @@ export function initSpec(state: State, host: Pick<Host, 'fs' | 'run' | 'invalida
 /** The confirm for a new proposed record: the next number, the project's file name and headings, never overwriting. */
 export function proposeSpec(state: State, host: Pick<Host, 'fs' | 'run' | 'invalidate' | 'toast'>, rawTitle: string, today: string, extra: { context?: string; decision?: string; scope?: string[] } = {}): ActionSpec | null {
   const adr = adrOf(state)
-  const title = titleText(rawTitle)
+  const title = titleClean(rawTitle)
 
-  if (adr.dir === null || title === '') return null
+  // Over the limit is no proposal at all, never a cut one (ADR-481); the caller says why with titleFit's count.
+  if (adr.dir === null || title === '' || !titleFit(rawTitle).ok) return null
 
   const dir = adr.dir
   const number = nextNumber(adr.registry.docs)
