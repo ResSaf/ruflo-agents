@@ -36,7 +36,7 @@ import {
 import { dirname, join, resolve } from 'node:path';
 import { hostname, userInfo } from 'node:os';
 import { syncPolicyProjection } from '../mods/policy-projection.js';
-import { assessAnchors, recordAnchor, type AnchorEvent } from './policy-ledger-anchor.js';
+import { assessAnchors, policyTrustRoot, recordAnchor, type AnchorEvent } from './policy-ledger-anchor.js';
 
 const POLICY_DIR = join('.claude-flow', 'policy');
 const POLICY_FILE = 'state.json';
@@ -208,7 +208,7 @@ async function writeJsonAtomic(file: string, value: unknown): Promise<void> {
 }
 
 function trustPaths(projectRoot: string): { key: string; anchor: string } {
-  const trustRoot = join(userInfo().homedir, '.config', 'ruflo', 'policy-trust');
+  const trustRoot = policyTrustRoot();
   const projectId = createHash('sha256').update(realpathSync(projectRoot)).digest('hex');
   const dir = join(trustRoot, projectId);
   return { key: join(dir, 'anchor.key'), anchor: join(dir, 'state.anchor.json') };

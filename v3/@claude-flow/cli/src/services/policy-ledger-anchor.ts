@@ -13,8 +13,8 @@
  */
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, realpathSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { userInfo } from 'node:os';
+import { dirname, isAbsolute, join, resolve } from 'node:path';
+import { homedir } from 'node:os';
 import type { PolicyState } from '@claude-flow/security';
 
 export type AnchorEvent = 'append' | 'migrated-from-state' | 'establish-anchor';
@@ -42,9 +42,24 @@ const MIRROR_FILE = 'ledger-anchor-head.json';
 
 export const anchorLogPath = (projectRoot: string): string => join(resolve(projectRoot), '.claude-flow', 'policy', LOG_FILE);
 
+/**
+ * Directory holding per-project trust material (anchor mirror, HMAC key).
+ * Resolved from the environment at call time (#3919): $XDG_CONFIG_HOME when it
+ * is absolute, else $HOME/.config (os.homedir() honours $HOME), so a scratch
+ * HOME keeps tests and sandboxed runs out of the developer's real home. An XDG
+ * user who already has trust state under the legacy ~/.config keeps using it.
+ */
+export function policyTrustRoot(): string {
+  const legacy = join(homedir(), '.config', 'ruflo', 'policy-trust');
+  const xdg = process.env.XDG_CONFIG_HOME;
+  if (!xdg || !isAbsolute(xdg)) return legacy;
+  const preferred = join(xdg, 'ruflo', 'policy-trust');
+  return !existsSync(preferred) && existsSync(legacy) ? legacy : preferred;
+}
+
 function mirrorPath(projectRoot: string): string {
   const id = createHash('sha256').update(realpathSync(projectRoot)).digest('hex');
-  return join(userInfo().homedir, '.config', 'ruflo', 'policy-trust', id, MIRROR_FILE);
+  return join(policyTrustRoot(), id, MIRROR_FILE);
 }
 
 function entryHash(entry: Omit<AnchorEntry, 'hash'>): string {
