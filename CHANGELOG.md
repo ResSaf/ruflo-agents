@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.56.1] - 2026-10-08
+
+Patch release: five bug fixes (four in `@claude-flow/cli`, one console). No leaf package changed since 3.56.0 (`git diff v3.56.0..HEAD -- v3/@claude-flow` touches only `cli`), and no behaviour is removed. The `ruflo-console` plugin fixes merged since 3.56.0 (console 0.40.2/0.40.3, #3917, #3924) ship through the plugin marketplace, not this npm release.
+
+### Fixed
+
+- The policy trust mirror and key now honour `HOME` and `XDG_CONFIG_HOME` instead of a fixed home directory, so a throwaway `HOME` no longer yields `policy-anchor-log-missing` (#3922, fixes #3919, reported by @HF-teamdev).
+- `ensureSchemaColumns` rewrites the store only when a column was actually added; an up-to-date encrypted memory store is no longer rewritten by a read such as `memory stats` (#3923, fixes #3918, reported by @HF-teamdev).
+- `config reset --section <name>` resets only that section and removes the matching flat overrides, preserving unrelated configuration (#3901, @rudycelekli).
+- MCP config tools (`config_get/set/list/export/import/reset`) now work on the plain nested JSON document written by the `config` CLI command instead of assuming a `{values, scopes}` envelope; existing envelope stores keep their format (#3902, @rudycelekli). This does not change how the daemon reads `config.json` (see #3192, #3449, #3239).
+- Console approvals badge counts only rows that have an approve or deny action (#3924, fixes #3920, reported by @HF-teamdev); delivered as `ruflo-console` 0.40.3 via the plugin marketplace.
+
 ## [3.56.0] - 2026-10-08
 
 Minor release: a hardening and correctness batch from @rudycelekli, @nicholas-ruest, @martinvlad, @HF-teamdev, @drakeo338 and @stuinfla. Several fixes change behaviour on purpose (see Behaviour changes). Integrated by merging each PR head, so authorship is preserved.
