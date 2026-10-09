@@ -14,6 +14,7 @@ import { record as recordEvents } from './data/events'
 import { readBounded, type ReadCache } from './data/files'
 import { plain } from './data/parse'
 import { checkNoLinks, dirOf, newFileArgv, replaceFileArgv } from './data/wf-file'
+import { writeFlavorReady } from './data/write-flavor'
 import type { Host } from './host'
 import { activeMission, mcOf, record, saveLedger } from './mission-control'
 import type { MissionRecord } from './mission-types'
@@ -190,13 +191,23 @@ async function writeNew(state: State, host: Pick<Host, 'fs' | 'run'>, dir: strin
   if (!safe.ok) return safe.why
 
   const hasDir = (await host.fs.stat(dirOf(path)).catch(() => undefined)) !== undefined
-  const result = await host.run(newFileArgv(path, hasDir), 10_000, text).catch(() => null)
+  const result = await host.run(newFileArgv(path, hasDir, await writeFlavorReady()), 10_000, text).catch((error: unknown) => ({ exitCode: null, stdout: '', stderr: error instanceof Error ? error.message : 'the command could not start' }))
 
-  if (result === null || result.exitCode !== 0) return 'the file could not be created (it may have appeared meanwhile: nothing was overwritten)'
+  if (result.exitCode !== 0) return writeFailure(result.exitCode, result.stderr)
 
   const back = await host.fs.read(path).catch(() => null)
 
   return back === text ? null : 'the file was written but reads back differently'
+}
+
+/**
+ * Why a create failed, in the person's words: the write's own reason (its first stderr line, plain and capped) and that nothing was
+ * replaced. It does not guess at a race: a file that appeared meanwhile says so in that reason ("cannot overwrite existing file", "File exists").
+ */
+export function writeFailure(exitCode: number | null, stderr: string | undefined): string {
+  const reason = plain((stderr ?? '').split('\n').map(line => line.trim()).find(line => line !== '') ?? '', 160)
+
+  return `the write failed (${exitCode === null ? 'it could not run' : `exit ${exitCode}`}${reason === '' ? '' : `: ${reason}`}); no file was replaced`
 }
 
 /** The new file as the confirm shows it: every line, up to 40, each marked +. */
@@ -339,7 +350,7 @@ export async function statusSpec(state: State, host: Pick<Host, 'fs' | 'run' | '
 
         if (now !== change.before) return say(state, host, `change ADR ${doc.number ?? doc.file}`, false, [...done, `${change.file} changed since the diff was shown: nothing was written to it. Ask again.`])
 
-        const result = await host.run(replaceFileArgv(path, true), 10_000, change.after).catch(() => null)
+        const result = await host.run(replaceFileArgv(path, true, await writeFlavorReady()), 10_000, change.after).catch(() => null)
         const back = await host.fs.read(path).catch(() => null)
 
         if (result === null || result.exitCode !== 0 || back !== change.after) return say(state, host, `change ADR ${doc.number ?? doc.file}`, false, [...done, `${change.file} could not be written as shown`])

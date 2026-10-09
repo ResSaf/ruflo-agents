@@ -51,7 +51,14 @@ grep -q "fs.stat(under(home, NOSTR_KEY))" "$HOOKS/data/files.ts" && [[ -z "$keys
 step "8. mutations only through fixed argv (claims_* via JSON.stringify), behind a confirm"
 grep -q "JSON.stringify(params)" "$HOOKS/actions.ts" \
   && [[ "$(grep -ohE "exec\('claims_[a-z-]+'" "$HOOKS/actions.ts" "$HOOKS/ops.ts" | sort -u | tr '\n' ' ')" == "exec('claims_claim' exec('claims_handoff' exec('claims_release' exec('claims_status' exec('claims_steal' " ]] \
-  && grep -q "state.pending = " "$HOOKS/runner.ts" && ! grep -qE "'(sh|bash)', '-c'" -r "$HOOKS" && ok || bad "action surface changed"
+  && grep -q "state.pending = " "$HOOKS/runner.ts" && ! grep -qE "'(sh|bash)', '-c'" -r --exclude=write-flavor.ts "$HOOKS" \
+  && [[ "$(grep -cE "'(sh|bash)', '-c'" "$HOOKS/data/write-flavor.ts")" == 1 ]] \
+  && grep -qF "['sh', '-c', POSIX_SCRIPTS[op], 'sh', path, ...(source === undefined ? [] : [source])]" "$HOOKS/data/write-flavor.ts" \
+  && [[ "$(awk '/POSIX_SCRIPTS = Object.freeze\(\{/{on=1;next} on&&/^\}/{on=0} on' "$HOOKS/data/write-flavor.ts" | sed -nE 's/^  ([A-Za-z]+): .*/\1/p' | sort | tr '\n' ' ')" == "append copyExclusive createExclusive createExclusiveWithDirs replace replaceWithDirs touch " ]] \
+  && ok || bad "action surface changed"
+# The one shell: data/write-flavor.ts, the macOS/BSD file writes (BSD dd/install lack oflag=append, conv=excl, -D). It runs only a script
+# from the frozen POSIX_SCRIPTS set (exactly these seven), by key, with the path as "$1" (a copy's source as "$2"); no exported builder takes a script.
+# tests/write-argv.spec.ts checks each script: the link/non-regular guard first, "$1" always quoted, no other parameter.
 
 step "9. plugin.register and tool.call are observed, never answered (but the console's own tools, ADR-444)"
 reg=$(awk '/on\(.plugin.register./,/^  }\)/' "$HOOKS/register.ts" | grep -cE "refuse:|deny:")
