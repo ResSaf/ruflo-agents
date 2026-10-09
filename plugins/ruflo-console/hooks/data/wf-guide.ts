@@ -17,6 +17,7 @@ import { cleanText } from './wf-clean'
 import { membersOf } from './hive'
 import type { AgentRecord, ClaimRecord, HiveAgentRecord, HiveInfo, SwarmInfo, TaskRecord } from './parse'
 import { idOf, plain } from './parse'
+import { membersText, swarmMembersOf } from './swarm-status'
 import type { WfAgent, WfRun } from './workflows'
 
 export type NestKind = 'swarm' | 'hive' | 'queen' | 'worker' | 'claim' | 'task' | 'note'
@@ -31,7 +32,7 @@ export function nestingOf(input: { swarm: SwarmInfo | null; hive: HiveInfo | nul
   const { swarm, hive, agents, hiveAgents, claims, tasks } = input
   const rows: NestRow[] = []
 
-  rows.push(swarm === null ? { depth: 0, kind: 'note', label: 'no swarm', detail: 'swarm init has not run here' } : { depth: 0, kind: 'swarm', label: swarm.id, detail: `${swarm.topology}${swarm.strategy === undefined ? '' : ` · ${swarm.strategy}`} · ${swarm.status} · ${swarm.agentIds.length} agents` })
+  rows.push(swarm === null ? { depth: 0, kind: 'note', label: 'no swarm', detail: 'swarm init has not run here' } : { depth: 0, kind: 'swarm', label: swarm.id, detail: `${swarm.topology}${swarm.strategy === undefined ? '' : ` · ${swarm.strategy}`} · ${swarm.status} · ${membersText(swarmMembersOf(swarm, agents))}` })
 
   if (hive === null) {
     rows.push({ depth: 1, kind: 'note', label: 'no hive-mind', detail: 'no queen and no workers: agents are not grouped under a hive' })

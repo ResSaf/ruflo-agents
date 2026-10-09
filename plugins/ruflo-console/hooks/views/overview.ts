@@ -5,6 +5,8 @@ import type { MemoryStats } from '../data/cli'
 import type { StartId } from '../starts'
 import { controlRows, isControlActive } from './control'
 import { optimizerRows } from './optimizer'
+import { uniqueAgents } from '../data/swarm-status'
+import { onDisk, swarmFacts } from './swarm'
 import { ago, button, col, count, kv, live, row, picture, rule, sourceLine, starts, text, THEME, type Ctx } from './common'
 
 /** Each subsystem in one line: what it is, from where, as of when. Nothing on this view is estimated. */
@@ -75,7 +77,11 @@ export function overviewView(ctx: Ctx): RenderElement {
 
   rows.push(kv(ctx, 'mods reporting', modsSeen.length === 0 ? 'none yet' : `${modsSeen.length}${modsBlocked > 0 ? ` · ${modsBlocked} blocked something` : ''}`, modsBlocked > 0 ? THEME.warn : undefined))
   rows.push(row(ctx, [button(ctx, 'overview-mods', 'The Room: Mods', () => ctx.act.view('room'))], 'overview-mods-row'))
-  rows.push(kv(ctx, 'swarm', swarm === null ? 'n/a — no swarm on disk' : `${swarm.id} · ${swarm.topology} · ${swarm.status} · ${swarm.agentIds.length || (snap?.agents.length ?? 0)} agents`))
+  // The swarm's own count, never the agent store's: the store holds every agent ever spawned, so a 0-agent swarm once read "259 agents".
+  const facts = swarm === null ? null : swarmFacts(swarm, nowMs, snap?.agents ?? [])
+  const stored = uniqueAgents(snap?.agents ?? []).length
+
+  rows.push(kv(ctx, 'swarm', swarm === null || facts === null ? 'n/a — no swarm on disk' : `${swarm.id} · ${swarm.topology} · ${swarm.status} · ${facts.text}${stored > 0 ? ` · ${onDisk(stored)}` : ''}`, facts?.isStale === true ? THEME.warn : undefined))
 
   // What is missing here, each with the button that adds it, most basic first.
   const missing: StartId[] = []

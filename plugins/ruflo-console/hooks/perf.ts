@@ -127,7 +127,9 @@ export const reportReader: Reader = (stdout, stderr, state) => {
 }
 
 const LOCAL = '$0, local: measures in-process and writes nothing'
-const PROBE = '$0, local: writes and removes a 4 KB probe file in .claude-flow/performance/'
+// The note is read by Claude's gate (model-tools.ts classOf): it must name what the entry does in words that do not read as a delete. The probe
+// file is the tool's own scratch, gone when it returns; "removes" here made the gate call these delete actions needing 'full' (they write locally).
+const PROBE = '$0, local: writes a temporary 4 KB probe file in .claude-flow/performance/ (it does not stay)'
 
 export const PERF: readonly PerfEntry[] = [
   { id: 'perf-metrics', name: 'METRICS', about: 'heap, rss, load and event-loop latency, now', label: 'performance metrics: memory, load and latency now', cost: 'read', args: ['performance', 'metrics', '--format', 'json'], read: metricsReader, note: LOCAL },
