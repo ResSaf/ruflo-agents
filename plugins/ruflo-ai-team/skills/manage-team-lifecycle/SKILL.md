@@ -1,6 +1,7 @@
 ---
 name: manage-team-lifecycle
 description: Pauses, resumes, or completes an AI team, or marks a run complete, while keeping its evidence. Use when the user asks to pause, stop, resume, wrap up, or close a team or run. Changes coordination state only and deletes nothing.
+allowed-tools: Read
 ---
 
 # Manage Team Lifecycle

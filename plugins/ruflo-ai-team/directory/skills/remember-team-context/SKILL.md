@@ -1,6 +1,7 @@
 ---
 name: remember-team-context
 description: Stores approved context for one AI team and searches it later, with provenance. Use when the user asks to remember a decision, constraint, or fact for the team, or to recall what the team already knows. Memory is separate for each team and tenant.
+allowed-tools: Read
 ---
 
 # Remember Team Context

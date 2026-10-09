@@ -1,6 +1,7 @@
 ---
 name: review-team-deliverables
 description: Checks an AI team run against its acceptance criteria using the evidence bundle. Use when the user asks whether the work is done or correct, or before completing a run. Separates verified evidence from agent claims.
+allowed-tools: Read
 ---
 
 # Review Team Deliverables

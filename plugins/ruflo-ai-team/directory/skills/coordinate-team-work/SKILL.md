@@ -1,6 +1,7 @@
 ---
 name: coordinate-team-work
 description: Creates, assigns, and updates tasks in an AI team run so work has one owner and one deliverable each. Use when the user asks to break down, assign, claim, block, or complete tasks in a run. Changes recorded task state only.
+allowed-tools: Read
 ---
 
 # Coordinate Team Work

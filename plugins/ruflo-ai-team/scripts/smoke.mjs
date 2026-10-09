@@ -21,7 +21,7 @@ const names=(dir,file)=>readdirSync(new URL(dir,root),{withFileTypes:true}).filt
 const items=[...names("skills/","SKILL.md"),...names("commands/"),...names("agents/")];
 const serverTools=new Set([...server.matchAll(/mcp\.(?:tool|registerTool)\('([a-z_]+)'/g)].map((m)=>m[1]));
 for(const f of items){const text=read(f);const fm=frontmatter(text);
-  check(`${f}: no namespaced tool names or allowed-tools`,!/mcp__/.test(text)&&!("allowed-tools" in fm));
+  check(`${f}: no namespaced tool names`,!/mcp__/.test(text));
   check(`${f}: description present, no angle brackets, under 300 chars`,!!fm.description&&!/[<>]/.test(fm.description)&&fm.description.length<300);
   check(`${f}: description is valid plain YAML`,!fm.description.includes(": ")&&!/^["']/.test(fm.description)||/^"/.test(fm.description));
   for(const t of text.matchAll(/\b((?:team|run|task|memory|evidence)_[a-z_]+)\b/g))check(`${f}: tool ${t[1]} exists on the server`,serverTools.has(t[1]));}

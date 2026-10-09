@@ -1,6 +1,7 @@
 ---
 name: launch-ai-team
 description: Plans and creates an AI team for a goal, with roles, a run that carries a unit budget, and bounded tasks. Use when the user asks to start, set up or staff a team, or to split a larger goal across roles. Records coordination state only; nothing is executed.
+allowed-tools: Read
 ---
 
 # Launch AI Team

@@ -1,6 +1,7 @@
 ---
 name: monitor-ai-team
 description: Reports an AI team's progress, blockers, task ownership, and recorded budget. Use when the user asks for status, what is blocked, who owns what, or how much of the budget is recorded as used. Read-only.
+allowed-tools: Read
 ---
 
 # Monitor AI Team
