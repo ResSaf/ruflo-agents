@@ -2,6 +2,8 @@
  * The closures the pane's buttons and `/ruflo` subcommands call: view switches, selection, the claims buttons, the
  * palette. Each does its work through the runner or the controller functions it is handed; nothing here touches `$`.
  */
+import { MISSION_OBJECTIVE_MAX } from './full-text'
+import { textRefusal } from './ops'
 import { claimTask, handoffClaim, releaseClaim, stealClaim, whyNot } from './actions'
 import { EVENT_KINDS } from './data/events'
 import { evolveActions } from './evolve'
@@ -93,7 +95,14 @@ export function actionsOf(state: State, host: Host, runner: Runner, steps: Steps
   wireActivity(state, host)
   const actions: Actions = {
     view: setView,
-    remember: () => {
+    remember: seen => {
+      // "Always allow" is the person's answer to the card they read: on a card that was replaced it remembers nothing (as a stale Yes runs nothing).
+      if (seen !== undefined && state.pending?.id !== seen) {
+        void runner.confirm(seen)
+
+        return
+      }
+
       const key = state.pending?.rememberKey
 
       if (key !== undefined && state.pending !== null) {
@@ -101,7 +110,7 @@ export function actionsOf(state: State, host: Host, runner: Runner, steps: Steps
         saveAllowed(state, host)
       }
 
-      void runner.confirm()
+      void runner.confirm(seen)
     },
     forget: key => {
       if (key === '') state.allowed.clear()
@@ -170,7 +179,7 @@ export function actionsOf(state: State, host: Host, runner: Runner, steps: Steps
     },
     close: () => void close(),
     back: () => setView(state.view === 'agent' ? state.back : state.options.look === 'bbs' ? 'menu' : 'overview'),
-    confirm: () => void runner.confirm(),
+    confirm: seen => void runner.confirm(seen),
     cancel: runner.cancel,
     select,
     agentNext: () => {
@@ -213,7 +222,8 @@ export function actionsOf(state: State, host: Host, runner: Runner, steps: Steps
       host.invalidate()
     },
     paletteQuery: text => {
-      state.palette.query = plain(text, 200)
+      // Never cut as it is typed (ADR-481): a run over a limit is refused with the exact count by the runner.
+      state.palette.query = plain(text, Number.MAX_SAFE_INTEGER)
       state.palette.index = 0
       host.invalidate()
     },
@@ -229,7 +239,7 @@ export function actionsOf(state: State, host: Host, runner: Runner, steps: Steps
     },
     run: (id, text = '') => runner.runById(id, text),
     costBudgetDraft: text => {
-      state.costBudgetDraft = text.slice(0, 40)
+      state.costBudgetDraft = text
     },
     filter: () => {
       const order = ['all', ...EVENT_KINDS] as const
@@ -240,7 +250,7 @@ export function actionsOf(state: State, host: Host, runner: Runner, steps: Steps
     },
     focus: key => void host.focus(PANE_ID, key).catch(() => undefined),
     plugin: op => runner.ask(pluginSpec(op), 'that cannot run here'),
-    start: (id, text = '') => runner.ask(startSpec(id, Date.now(), text, present => { state.nostrKeyVerifiedAtMs = present ? Date.now() : null }), id === 'mission' || id === 'task' ? 'type it first (it may not start with -)' : 'that start cannot run here'),
+    start: (id, text = '') => runner.ask(startSpec(id, Date.now(), text, present => { state.nostrKeyVerifiedAtMs = present ? Date.now() : null }), id === 'mission' || id === 'task' ? ((id === 'mission' ? textRefusal(text, 'the objective', MISSION_OBJECTIVE_MAX) : textRefusal(text, 'the description')) ?? 'type it first (it may not start with -)') : 'that start cannot run here'),
     // The main menu's prompt, as a board's: a key (2, w, i), a name (swarm, x.ruv.io), ? for help, O to log off.
     menu: text => {
       const word = text.trim().toLowerCase()
