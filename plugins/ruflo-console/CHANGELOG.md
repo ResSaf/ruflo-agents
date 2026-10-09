@@ -2,6 +2,9 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-console`.
 
+## 0.40.7 — 2026-10-09
+- fix: the console's disk writes work on macOS and the BSDs: BSD `dd` and `install` refuse `oflag=append`, `conv=excl` and `-D`, so every append (Events, Timeline, the autopilot journal), exclusive create (ADR records, exports, `.gitignore`), create-with-folders and the journal archive copy failed there. The host is asked once (`uname -s`, with its own 3 s deadline and a `process.platform` fallback); Linux keeps the exact GNU argv, other kernels run one of seven constant `sh -c` scripts (frozen set, the path only ever as quoted `$1`, a link or non-regular target refused, `set -C` for O_EXCL), and a failed ADR write says why instead of "it may have appeared meanwhile" (#3938, #3939, thanks @proffesor-for-testing)
+
 ## 0.40.6 — 2026-10-09
 - fix: times read as times and a swarm reads as itself: the AgentDB mod's "written" age no longer shows 100020735d ago or 0s for a future stamp (it reads n/a), a swarm's agent count and status agree on Overview, Swarm, the topology graph, the status bar and Workflows (a swarm with no listed members says so; "stalled" needs evidence, not just an old record), Workflows agent ages show days, and `mission-goal` says it replaces the goal instead of "nothing is written" (#3935, #3936, thanks @proffesor-for-testing)
 
