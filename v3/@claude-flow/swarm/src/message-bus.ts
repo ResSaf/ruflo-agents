@@ -588,6 +588,11 @@ export class MessageBus extends EventEmitter implements IMessageBus {
         if (this.isShutdown) {
           return;
         }
+        // The subscriber may have unsubscribed during the backoff; addToQueue
+        // would recreate an orphaned queue nobody drains.
+        if (!this.subscriptions.has(subscriberAgentId)) {
+          return;
+        }
         this.addToQueue(subscriberAgentId, message, entry.attempts);
         this.scheduleProcessing();
       }, backoffMs);

@@ -98,3 +98,28 @@ describe('MessageBus - broadcast delivery retry accounting', () => {
     expect(bus.getQueueDepth()).toBe(0);
   });
 });
+
+describe('MessageBus - retry for a subscriber that unsubscribes during backoff', () => {
+  it('does not recreate an orphaned queue for the departed subscriber', async () => {
+    const bus = createMessageBus({ processingIntervalMs: 5, retryAttempts: 3, ackTimeoutMs: 1000 });
+    await bus.initialize();
+    let invocations = 0;
+    bus.subscribe('agent-bad', () => {
+      invocations++;
+      bus.unsubscribe('agent-bad');
+      throw new Error('simulated handler crash');
+    });
+    await bus.broadcast({
+      type: 'direct',
+      from: 'agent-sender',
+      payload: {},
+      priority: 'normal',
+      requiresAck: false,
+      ttlMs: 60000,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(invocations).toBe(1);
+    expect(bus.getQueueDepth()).toBe(0);
+    await bus.shutdown();
+  });
+});
