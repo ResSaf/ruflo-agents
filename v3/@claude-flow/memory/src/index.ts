@@ -190,6 +190,15 @@ export type {
 // ===== Core Components =====
 export { AgentDBAdapter } from './agentdb-adapter.js';
 export type { AgentDBAdapterConfig } from './agentdb-adapter.js';
+export {
+  AgentdbLockError,
+  clearStaleAgentdbLock,
+  closeWithAgentdbLockRecovery,
+  inspectAgentdbLock,
+  isConcurrentModificationError,
+  withAgentdbLockRecovery,
+} from './agentdb-lock-guard.js';
+export type { LockInspection, LockState, LockGuardOptions } from './agentdb-lock-guard.js';
 export { AgentDBBackend } from './agentdb-backend.js';
 export type { AgentDBBackendConfig } from './agentdb-backend.js';
 export {
