@@ -546,11 +546,11 @@ export class MessageBus extends EventEmitter implements IMessageBus {
             to: subscription.agentId
           });
         } catch (error) {
-          this.handleDeliveryError(message, entry, error as Error);
+          this.handleDeliveryError(message, entry, error as Error, subscription.agentId);
         }
       });
     } catch (error) {
-      this.handleDeliveryError(message, entry, error as Error);
+      this.handleDeliveryError(message, entry, error as Error, subscription.agentId);
     }
   }
 
@@ -565,7 +565,7 @@ export class MessageBus extends EventEmitter implements IMessageBus {
     this.emit('message.ack_failed', { messageId: message.id, error });
   }
 
-  private handleDeliveryError(message: Message, entry: MessageQueueEntry, error: Error): void {
+  private handleDeliveryError(message: Message, entry: MessageQueueEntry, error: Error, subscriberAgentId: string): void {
     entry.attempts++;
     entry.lastAttemptAt = new Date();
 
@@ -573,13 +573,12 @@ export class MessageBus extends EventEmitter implements IMessageBus {
       // Re-queue for retry, preserving the attempt count so it's bounded by
       // retryAttempts instead of resetting to 0 on every re-queue.
       //
-      // KNOWN LIMITATION (pre-existing, not fixed here): for a broadcast
-      // message, message.to stays the literal string 'broadcast' rather
-      // than the per-subscriber agentId enqueue() originally fanned out
-      // to, so this re-queues under a 'broadcast'-keyed queue nobody
-      // drains — a failing broadcast subscriber's retries (and eventual
-      // message.failed) are silently lost. Only the direct-message path
-      // is bounded by this fix.
+      // Re-queue under the real subscriber's agentId, not message.to: for a
+      // broadcast message, message.to is the literal string 'broadcast',
+      // not any queue a subscription actually drains (enqueue() fanned the
+      // original send out to each subscriber's own agentId-keyed queue), so
+      // re-queuing under message.to would silently strand the retry in an
+      // orphaned queue nobody processes.
       //
       // The re-queue itself is delayed (not just the dispatch) so the
       // backstop interval cannot pick the message up early either.
@@ -589,7 +588,7 @@ export class MessageBus extends EventEmitter implements IMessageBus {
         if (this.isShutdown) {
           return;
         }
-        this.addToQueue(message.to, message, entry.attempts);
+        this.addToQueue(subscriberAgentId, message, entry.attempts);
         this.scheduleProcessing();
       }, backoffMs);
       timer.unref?.();
