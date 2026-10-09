@@ -23,9 +23,12 @@ import { DIGEST_HEADER, readAdrDigest } from '../../ruflo-swarm/hooks/adr-digest
 import { parseAdr } from '../hooks/data/adr'
 import { digestBlock } from '../hooks/data/adr-scope'
 import { cleanAfter } from './adr-helpers'
+import { useNativeWriteFlavor } from './fixtures/write-flavor'
 import { missionOf, TASK, world } from './adr-world'
 
 cleanAfter()
+// The digest file and the drafted ADR are written to a real disk: the argv this machine's tools take (GNU on Linux, sh on macOS).
+useNativeWriteFlavor()
 afterAll(() => setLook('plain'))
 
 describe('attach, suggest and detach on a mission', () => {

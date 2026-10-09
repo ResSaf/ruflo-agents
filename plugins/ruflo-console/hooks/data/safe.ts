@@ -22,3 +22,15 @@ export const ratioOf = (value: unknown): number | undefined => (typeof value ===
 
 /** A value keyed by a name a file or the CLI supplied: an OWN key only, so `toString`, `constructor` or `__proto__` read as absent, never as a function. */
 export const own = <T>(record: Readonly<Record<string, T>>, key: unknown): T | undefined => (typeof key === 'string' && Object.hasOwn(record, key) ? record[key] : undefined)
+
+/** 2000-01-01T00:00:00Z: no ruflo file was written before it. */
+const EARLIEST_MS = 946_684_800_000
+/** How far ahead of now a write time may be (a clock a little ahead) before it is not believed. */
+const FUTURE_SLACK_MS = 86_400_000
+
+/**
+ * A write time fit to say "N ago" about: from 2000 to a day past now, else undefined (shown as n/a). timeOf alone admits ±8.64e15, which read
+ * "100020735d ago", and a time in the future, which read "0s ago".
+ */
+export const sinceOf = (ms: number | null | undefined, nowMs: number): number | undefined =>
+  typeof ms === 'number' && Number.isFinite(ms) && ms >= EARLIEST_MS && ms <= nowMs + FUTURE_SLACK_MS ? ms : undefined

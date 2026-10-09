@@ -5,6 +5,7 @@
  */
 import { idOf, type AgentRecord, type ClaimRecord, type Claimant, type TaskRecord } from './data/parse'
 import type { Snapshot } from './data/snapshot'
+import type { Findings } from './data/failure'
 import type { Host } from './host'
 
 export type ActionSpec = {
@@ -43,6 +44,12 @@ export type ActionSpec = {
   onOutput?: (stdout: string) => void
   /** A lab entry that reads its own output: it may keep what it parsed, and answers the result panel's lines (masked where it must be). */
   read?: (stdout: string, stderr: string, ok: boolean) => string[]
+  /**
+   * A verdict command's convention, checked against the CLI's source: the exits it uses for "it found something" and the
+   * shape of its JSON answer. Such an exit WITH an answer of that shape is an answer, not a failure; without one (no JSON,
+   * `{}`, a banner) it stays a failure. A run with such an answer is judged by the answer's top-level keys only.
+   */
+  findings?: Findings
 }
 
 export const exec = (tool: string, params: Record<string, string>) => ['mcp', 'exec', '-t', tool, '-p', JSON.stringify(params)] as const
