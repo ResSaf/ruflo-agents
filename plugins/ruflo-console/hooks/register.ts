@@ -13,6 +13,7 @@ import { newState, PANE_ID, restore, restoreSessions, storeKeyOf, termStoreKeyOf
 import { BAR_KEY, barView } from './views/bar'
 import { addNotice, dismissNotices } from './notices'
 import { setBootChecks } from './boot-checks'
+import { startWriteFlavorDetection } from './data/write-flavor'
 import { buildOf, isOurCheckout, setBuild } from './build'
 import { runUpdateCheck } from './update-flow'
 import { announceModelTools, parseControlEnv, serveModelTools } from './model-tools'
@@ -165,6 +166,10 @@ export const register: Register = (on, raw: PluginOptions) => {
   on('session.start', async ($, e, next) => {
     control?.stop()
     host = hostOf($, e.cwd, { prefs: () => state.toastPrefs, record: digest => recordToast(state, digest) })
+    // Which write argv the host takes (GNU dd/install on Linux, the constant sh scripts on macOS/BSD). Started before the controller (whose
+    // timers write) exists; every write awaits it (writeFlavorReady), so none is built with a guessed flavor.
+    const detecting = host
+    void startWriteFlavorDetection((argv, timeoutMs) => detecting.run(argv, timeoutMs))
     state.cwd = e.cwd
     state.nostrKeyVerifiedAtMs = null
     state.isInteractive = e.isInteractive !== false

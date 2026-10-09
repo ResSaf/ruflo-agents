@@ -106,8 +106,12 @@ afterAll(async () => {
 
 const rowOf = (name: string): WtRow => storeFor(state).read?.rows.find(entry => entry.path === wtPath(name)) as WtRow
 
+// The first three are Linux only: the in-use probe reads /proc with GNU find -printf (data/wf-worktrees.ts PROCS_ARGV), which macOS has
+// neither of, so on another kernel they measure the test machine, not the guard. CI runs them on Linux.
+const onLinux = process.platform === 'linux'
+
 describe('the removal guard against a real repository', () => {
-  it('offers exactly the merged, clean, idle, old, not-current worktrees, and keeps everything else with the right reason', async () => {
+  it.skipIf(!onLinux)('offers exactly the merged, clean, idle, old, not-current worktrees, and keeps everything else with the right reason', async () => {
     await refreshWorktrees(state, host, true)
 
     const { read, check } = storeFor(state)
@@ -133,7 +137,7 @@ describe('the removal guard against a real repository', () => {
     expect(rowOf('old').createdMs).toBeLessThan(Date.now() - MIN_AGE_MS)
   })
 
-  it('removes only those, one at a time, never a branch, and a path that reads like a command line is one argv element', async () => {
+  it.skipIf(!onLinux)('removes only those, one at a time, never a branch, and a path that reads like a command line is one argv element', async () => {
     const spec = removalSpec(envOf())
 
     expect(spec?.declared).toBe('delete')
@@ -152,7 +156,7 @@ describe('the removal guard against a real repository', () => {
     expect(state.outcome?.verified).toBe('yes')
   })
 
-  it('re-checks each worktree at the moment of removal: one made dirty, in use or unmerged after the confirm is kept', async () => {
+  it.skipIf(!onLinux)('re-checks each worktree at the moment of removal: one made dirty, in use or unmerged after the confirm is kept', async () => {
     for (const name of ['race-dirty', 'race-busy', 'race-ahead', 'race-ok']) {
       await git(main, 'worktree', 'add', '-b', `b-${name}`, wtPath(name))
       await utimes(join(wtPath(name), '.git'), new Date(Date.now() - 5 * 86_400_000), new Date(Date.now() - 5 * 86_400_000))
