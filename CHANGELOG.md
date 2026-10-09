@@ -13,10 +13,11 @@ Patch release: AgentDB `3.0.0-alpha.20` update. `@claude-flow/memory` 3.0.3 (pub
 
 ### Changed
 
-- AgentDB floor raised from `^3.0.0-alpha.17` to `^3.0.0-alpha.20` (`memory`, `cli`, root, `ruflo`). alpha.20 swaps `@xenova/transformers` for `@huggingface/transformers`, `@ruvector/rvf` 0.1.9 -> 0.2.3 and `ruvector` -> 0.2.x, and keeps MCP stdout clean JSON-RPC.
+- AgentDB floor raised from `^3.0.0-alpha.17` to `^3.0.0-alpha.20` (`memory`, `cli`, root, `ruflo`). alpha.20 swaps `@xenova/transformers` for `@huggingface/transformers`, `@ruvector/rvf` 0.1.9 -> 0.2.3 and `ruvector` -> 0.2.x. Semantic search scores shift slightly (same-text cosine ~0.992 against alpha.17 embeddings); an entry scored just under the 0.3 default threshold under alpha.17 can now appear just above it, ranked far below the exact-keyword hit.
 
 ### Fixed
 
+- Dev tree only: `v3/package.json` gains a `pnpm.packageExtensions` entry declaring `onnxruntime-common` 1.24.3 for `@huggingface/transformers@4.2.0` (it imports it without declaring it, so pnpm's hoist gave it 1.14.0 and AgentDB silently fell back to mock embeddings in the pnpm workspace; npm installs were not affected).
 - AgentDB alpha.20 refuses a sql.js save when the database changed under an open handle or when `<db>.agentdb.lock` exists, and a lock left by a crashed writer was never cleared, so every later save failed and the database file was never created. `@claude-flow/memory` now removes that lock only when it is provably stale (regular file named exactly `<db>.agentdb.lock`, numeric PID that is dead, older than 10 s, re-verified after an atomic rename-aside), retries once, and otherwise throws `AgentdbLockError`. A failed persist on shutdown is surfaced (`ControllerRegistry`, `AgentDBBackend`, `HybridBackend`, `shutdownBridge`), never swallowed. This only affects the sql.js path (no native better-sqlite3).
 
 ## [3.56.2] - 2026-10-09
