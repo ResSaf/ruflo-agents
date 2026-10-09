@@ -3,6 +3,7 @@ import { tolerantPress } from './press-guard'
 import { ANSWER_KEYS } from './views/attention'
 
 import { createController, type Controller } from './controller'
+import { startSessions } from './sessions'
 import { record } from './data/events'
 import { plain } from './data/parse'
 import { dispatch } from './dispatch'
@@ -249,6 +250,7 @@ export const register: Register = (on, raw: PluginOptions) => {
       bound.rufloTools().then(counted => void (state.rufloTools = counted), () => undefined),
     ])
     control.start()
+    startSessions(state, bound)
     await control.refresh()
     control.autoOpen()
 

@@ -4,13 +4,28 @@ import type { GuidanceHooks } from './guidance'
 import { versionText } from './probe'
 import { HANDSHAKE_MARKER, ownedEvents } from './ownership'
 import type { ModOptions } from './options'
+import { ATTENTION_MAX_BYTES, ATTENTION_STATUS, attentionLine } from './attention'
 import { MAX_BYTES, PROTECTOR_STATUS, protectorLine } from './protector'
 import { redraw, report, under, type ModState } from './state'
 import { bindToasts } from './toast'
 
 /** `/ruflo-mods` plus the protector row when `.claude-flow/protector-mod/status.json` is present and readable (bounded, regular file only). */
-async function reportWithProtector($: EngineInterface, s: ModState): Promise<string> {
-  const base = report(s)
+/** The `attention:` row when the sessionAttention option is on and the console's summary file is a small regular file; never anything else. */
+async function attentionRow($: EngineInterface, s: ModState, on: boolean): Promise<string | undefined> {
+  if (!on) return undefined
+  try {
+    const path = under(s, ATTENTION_STATUS)
+    const st = await $.fs.stat(path)
+    if (st.kind !== 'file' || st.size > ATTENTION_MAX_BYTES) return undefined
+    return attentionLine(await $.fs.read(path), await $.clock.now().catch(() => Date.now()))
+  } catch {
+    return undefined
+  }
+}
+
+async function reportWithProtector($: EngineInterface, s: ModState, withAttention = false): Promise<string> {
+  const extra = await attentionRow($, s, withAttention)
+  const base = extra === undefined ? report(s) : `${report(s)}\n${extra}`
   try {
     const path = under(s, PROTECTOR_STATUS)
     const st = await $.fs.stat(path)
@@ -108,13 +123,13 @@ export function registerSession(on: On, state: ModState, options: ModOptions, gu
     return next(e)
   })
 
-  on('command.run', { command: 'ruflo-mods' }, async $ => ({ text: await reportWithProtector($, state) }))
+  on('command.run', { command: 'ruflo-mods' }, async $ => ({ text: await reportWithProtector($, state, options.sessionAttention) }))
 
   // `/ruflo` is ruflo-console's one command for every ruflo mod; its `mods` subcommand is this report. The console
   // registers `/ruflo`; this hook answers `mods` wherever it sits in the chain and passes every other word on.
   // `/ruflo-mods` above stays registered as its alias: ADR-406 removes, renames or reassigns no command.
   // `/ruflo-console` is the same command as `/ruflo` (kept by ADR-406), so its `mods` is answered too.
   for (const command of ['ruflo', 'ruflo-console'] as const) {
-    on('command.run', { command }, async ($, e, next) => (e.args.trim().split(/\s+/)[0]?.toLowerCase() === 'mods' ? { text: await reportWithProtector($, state) } : next(e)))
+    on('command.run', { command }, async ($, e, next) => (e.args.trim().split(/\s+/)[0]?.toLowerCase() === 'mods' ? { text: await reportWithProtector($, state, options.sessionAttention) } : next(e)))
   }
 }

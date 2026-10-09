@@ -449,13 +449,13 @@ export function paneView(base: Ctx): RenderElement {
 
 type Plain = { type: string; props: { children?: unknown; label?: string } }
 
-const plainKit = (): Ctx['kit'] => {
+export const plainKit = (): Ctx['kit'] => {
   const element = (type: string) => (props: Record<string, unknown>) => ({ type, props }) as never
 
   return { Box: element('Box'), Text: element('Text'), Button: element('Button') }
 }
 
-function linesOf(node: unknown, out: string[]): void {
+export function linesOf(node: unknown, out: string[]): void {
   if (node === null || node === undefined || typeof node === 'boolean') return
   if (typeof node === 'string' || typeof node === 'number') {
     out.push(String(node))
@@ -491,7 +491,7 @@ function linesOf(node: unknown, out: string[]): void {
  * a surface without the pane, or a script that wants to read what the console sees.
  */
 export function viewText(ctx: Omit<Ctx, 'kit' | 'pictures'>, view: ViewId): string {
-  const body = BODIES[view]({ ...ctx, kit: plainKit(), pictures: new Map() })
+  const body = BODIES[view]({ ...ctx, kit: plainKit(), pictures: new Map(), text: true })
   const out: string[] = []
 
   linesOf(body, out)

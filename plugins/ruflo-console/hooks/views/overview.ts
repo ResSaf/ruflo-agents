@@ -6,6 +6,7 @@ import type { StartId } from '../starts'
 import { controlRows, isControlActive } from './control'
 import { optimizerRows } from './optimizer'
 import { uniqueAgents } from '../data/swarm-status'
+import { attentionOverviewRows } from './sessions'
 import { onDisk, swarmFacts } from './swarm'
 import { ago, button, col, count, kv, live, row, picture, rule, sourceLine, starts, text, THEME, type Ctx } from './common'
 
@@ -76,6 +77,7 @@ export function overviewView(ctx: Ctx): RenderElement {
   const modsBlocked = modsSeen.filter(mod => mod.blocked > 0).length
 
   rows.push(kv(ctx, 'mods reporting', modsSeen.length === 0 ? 'none yet' : `${modsSeen.length}${modsBlocked > 0 ? ` · ${modsBlocked} blocked something` : ''}`, modsBlocked > 0 ? THEME.warn : undefined))
+  rows.push(...attentionOverviewRows(ctx))
   rows.push(row(ctx, [button(ctx, 'overview-mods', 'The Room: Mods', () => ctx.act.view('room'))], 'overview-mods-row'))
   // The swarm's own count, never the agent store's: the store holds every agent ever spawned, so a 0-agent swarm once read "259 agents".
   const facts = swarm === null ? null : swarmFacts(swarm, nowMs, snap?.agents ?? [])
