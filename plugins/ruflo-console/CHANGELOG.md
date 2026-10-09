@@ -2,6 +2,9 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-console`.
 
+## 0.40.3 — 2026-10-08
+- fix: the approvals badge (band "n to approve", menu badge, change notices, and the Approvals header) counts only rows a person can act on; a refused mod or a permission deny has no approve or deny action, stays listed on the page as a notice, and no longer holds the badge up with nothing to press (#3920)
+
 ## 0.40.2 — 2026-10-08
 - fix: a Yes runs only the card it was pressed on: every confirm card has an id and the Yes, Always allow and Always accept buttons carry it, so a card that took the first one's place (the person's own ask) is never answered by a Yes meant for the old one; the stale Yes runs nothing and says so (ADR-450 T17)
 - fix: an ask of Claude's that was screened first and landed after its tool call returned is checked against the level and Stop as they are when it lands; a level lowered meanwhile wins

@@ -8,7 +8,7 @@
 import { activeMission, derive, progressOf } from '../mission-control'
 import type { RenderElement } from 'claude-code'
 
-import { alertsOf, approvalsOf } from '../data/alerts'
+import { alertsOf, waitingApprovalsOf } from '../data/alerts'
 import { agentLabels } from '../data/parse'
 import { secMemo } from '../secure'
 import type { State, ViewId } from '../state'
@@ -106,7 +106,7 @@ export function barParts(state: State, nowMs: number = Date.now()): BarPart[] {
   const parts: BarPart[] = []
 
   // What needs a person: approvals waiting and warn/bad alerts. Info alerts (a claim held for days) stay in the pane.
-  const approvals = approvalsOf(state).length
+  const approvals = waitingApprovalsOf(state).length
   const alerts = alertsOf(state, nowMs, state.loadedAtMs).filter(alert => alert.level !== 'info').length
 
   if (approvals > 0) parts.push({ text: `${approvals} to approve (q)`, tone: 'attention', go: 'approvals' })
