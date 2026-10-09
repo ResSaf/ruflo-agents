@@ -2,6 +2,9 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; this is the whole history.
 
+## 0.2.4 — 2026-10-09
+- chore: drop the unused `categories` key from plugin.json (claude.ai plugin validator warns on it; nothing read it)
+
 ## 0.2.3 — 2026-10-05
 - fix: vitest suites in agntcy, arena and graph-intelligence are *.spec.ts so claude plugin test collects only the kit tests
 
