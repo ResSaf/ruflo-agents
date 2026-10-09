@@ -8,6 +8,7 @@
  */
 import { exec, type ActionSpec } from './actions'
 import { jsonAfter, type AuditTrend } from './data/cli'
+import { rowsWith, type Findings } from './data/failure'
 import { idOf, plain, recordOf } from './data/parse'
 import type { State } from './state'
 
@@ -32,6 +33,8 @@ export type LabEntry = {
   types?: string
   note?: string
   timeoutMs?: number
+  /** Its "found something" exits and answer shape (ActionSpec.findings). */
+  findings?: Findings
 }
 
 export const LAB_GROUPS: readonly { id: LabGroup; title: string; right: string }[] = [
@@ -42,6 +45,16 @@ export const LAB_GROUPS: readonly { id: LabGroup; title: string; right: string }
 
 const MH = 'metaharness'
 const JSON_OUT = ['--format', 'json'] as const
+// plugins/ruflo-metaharness/scripts/*.mjs (passed through by commands/metaharness.ts' dispatchPluginScript) print their
+// JSON and then exit 1 when its `alert` triggered, and exit 2 on a real failure. Only three alert with the argv used here:
+// mcp-scan and threat-model (--fail-on high by default) and drift-from-history (--threshold 0.95 by default). score,
+// genome, audit-trend, similarity and oia-audit alert only with a flag this lab never passes, so they declare nothing.
+// redblue also passes an upstream non-zero exit through after its JSON, so it declares nothing either.
+const alertOf = (json: Record<string, unknown>) => recordOf(json.alert)
+const alerted = (json: Record<string, unknown>) => alertOf(json)?.triggered === true
+const MCP_SCAN_FOUND: Findings = { exits: [1], isAnswer: json => rowsWith(json.findings, ['severity']) && typeof alertOf(json)?.triggered === 'boolean', found: alerted }
+const THREAT_FOUND: Findings = { exits: [1], isAnswer: json => typeof json.worst === 'string' && rowsWith(json.findings, []) && typeof alertOf(json)?.triggered === 'boolean' && typeof alertOf(json)?.worst === 'string', found: alerted }
+const DRIFT_FOUND: Findings = { exits: [1], isAnswer: json => json.command === 'drift-from-history' && recordOf(json.baseline) !== null && recordOf(json.current) !== null && typeof alertOf(json)?.triggered === 'boolean', found: alerted }
 
 /** The two newest stored audits' keys, oldest first, from the `audits` probe; null until there are two. */
 export function auditKeys(state: State): [string, string] | null {
@@ -59,12 +72,12 @@ const TWO_AUDITS = 'needs two stored audits (metaharness audit-list): run "MetaH
 export const LAB: readonly LabEntry[] = [
   { id: 'mh-score', group: 'inspect', name: 'SCORE', about: 'five readiness axes and the est. cost per run', label: 'score the harness now (metaharness score)', cost: 'read', args: [MH, 'score', ...JSON_OUT] },
   { id: 'mh-genome', group: 'inspect', name: 'GENOME', about: 'repo type, topology, risk, MCP surface, verdict', label: 'genome: the seven-section readiness report', cost: 'read', args: [MH, 'genome', ...JSON_OUT] },
-  { id: 'mh-mcp-scan', group: 'inspect', name: 'MCP-SCAN', about: 'static findings on the MCP surface, by severity', label: 'mcp-scan: static MCP findings by severity', cost: 'read', args: [MH, 'mcp-scan', ...JSON_OUT] },
-  { id: 'mh-threat', group: 'inspect', name: 'THREAT-MODEL', about: 'the worst severity, access flags and findings', label: 'threat-model: worst severity and its findings', cost: 'read', args: [MH, 'threat-model', ...JSON_OUT] },
+  { id: 'mh-mcp-scan', group: 'inspect', name: 'MCP-SCAN', about: 'static findings on the MCP surface, by severity', label: 'mcp-scan: static MCP findings by severity', cost: 'read', args: [MH, 'mcp-scan', ...JSON_OUT], findings: MCP_SCAN_FOUND },
+  { id: 'mh-threat', group: 'inspect', name: 'THREAT-MODEL', about: 'the worst severity, access flags and findings', label: 'threat-model: worst severity and its findings', cost: 'read', args: [MH, 'threat-model', ...JSON_OUT], findings: THREAT_FOUND },
   { id: 'mh-doctor', group: 'inspect', name: 'DOCTOR', about: 'is MetaHarness installed, its packages and scripts intact', label: 'doctor --component metaharness: installed and intact?', cost: 'read', args: ['doctor', '--component', MH] },
   { id: 'mh-trend', group: 'inspect', name: 'AUDIT-TREND', about: 'the newest stored audit against the one before', label: 'audit-trend: the newest audit against the one before', cost: 'read', args: state => { const keys = auditKeys(state); return keys === null ? null : [MH, 'audit-trend', '--baseline-key', keys[0], '--current-key', keys[1], ...JSON_OUT] }, why: TWO_AUDITS },
   { id: 'mh-similarity', group: 'inspect', name: 'SIMILARITY', about: 'how alike the newest two audits are, per dimension', label: 'similarity: the newest two audits, per dimension', cost: 'read', args: state => { const keys = auditKeys(state); return keys === null ? null : [MH, 'similarity', '--a-key', keys[0], '--b-key', keys[1], '--per-dimension', ...JSON_OUT] }, why: TWO_AUDITS },
-  { id: 'mh-drift', group: 'inspect', name: 'DRIFT', about: 'a fresh audit against the newest stored one, not stored', label: 'drift-from-history: a fresh audit against the last (dry run)', cost: 'read', args: [MH, 'drift-from-history', '--dry-run', ...JSON_OUT], timeoutMs: 240_000 },
+  { id: 'mh-drift', group: 'inspect', name: 'DRIFT', about: 'a fresh audit against the newest stored one, not stored', label: 'drift-from-history: a fresh audit against the last (dry run)', cost: 'read', args: [MH, 'drift-from-history', '--dry-run', ...JSON_OUT], timeoutMs: 240_000, findings: DRIFT_FOUND },
   { id: 'mh-receipts', group: 'inspect', name: 'RECEIPTS', about: 'every flywheel evaluation receipt and its state', label: 'flywheel receipts: each evaluation receipt and its state', cost: 'read', args: [MH, 'flywheel', 'receipts'] },
   { id: 'mh-gepa-genome', group: 'inspect', name: 'GEPA GENOME', about: 'load and validate the shipped cand-6 genome', label: 'gepa genome: load and validate the shipped genome', cost: 'read', args: [MH, 'gepa', '--op', 'genome', ...JSON_OUT] },
   { id: 'mh-gepa-render', group: 'inspect', name: 'GEPA RENDER', about: 'the system prompt that genome compiles to', label: 'gepa render: the system prompt the genome compiles to', cost: 'read', args: [MH, 'gepa', '--op', 'render', ...JSON_OUT] },
@@ -98,6 +111,7 @@ export function labSpec(entry: LabEntry, state: State): ActionSpec | null {
     ...(entry.cost === 'read' && { isReadOnly: true }),
     ...(entry.note !== undefined && { note: entry.note }),
     ...(entry.timeoutMs !== undefined && { timeoutMs: entry.timeoutMs }),
+    ...(entry.findings !== undefined && { findings: entry.findings }),
   }
 }
 

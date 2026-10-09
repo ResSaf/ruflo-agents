@@ -1,6 +1,7 @@
 /** The confirm-gated writes of Mission Control: create the mission and its tasks, hand a task to Claude, cancel. */
 import type { ActionSpec } from './actions'
 import { plain, type TaskRecord } from './data/parse'
+import { taskStatusOf } from './data/automate'
 import { stageOf, toMissionPlan, type Profile } from './goap'
 import { checkLimit, MISSION_OBJECTIVE_MAX } from './full-text'
 import type { Host } from './host'
@@ -239,7 +240,7 @@ export function setPaused(state: State, host: Host, paused: boolean): void {
 
 /** Cancel: cancel every task not done in the ruflo task store, then ask the mission record to cancel (allowed only from some states). */
 export function cancelSpec(state: State, host: Host, mission: MissionRecord, tasks: readonly TaskRecord[]): ActionSpec {
-  const open = mission.tasks.filter(task => task.rufloTaskId !== undefined && !['completed', 'cancelled'].includes(rufloTaskOf(tasks, task)?.status ?? ''))
+  const open = mission.tasks.filter(task => task.rufloTaskId !== undefined && !['completed', 'cancelled'].includes(taskStatusOf(rufloTaskOf(tasks, task)?.status)))
 
   return {
     label: `cancel mission ${mission.id} (${open.length} open tasks)`,

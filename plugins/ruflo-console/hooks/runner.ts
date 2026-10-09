@@ -9,6 +9,7 @@ import type { ActionSpec } from './actions'
 import { rememberKey } from './remember'
 import { record } from './data/events'
 import { plain } from './data/parse'
+import { answerFailed, failureReason, judgeFindings } from './data/failure'
 import type { Host } from './host'
 import { labLines } from './mh-lab'
 import { outputLines } from './ops'
@@ -87,22 +88,42 @@ export function createRunner(state: State, host: Host, deps: RunnerDeps): Runner
       if (isCold) say(spec.label, true, FIRST_RUN_LABEL)
       const result = await host.run(argv, isCold ? Math.max(spec.timeoutMs ?? 0, COLD_TIMEOUT_MS) : spec.timeoutMs ?? 90_000, spec.stdin)
 
-      if (result.exitCode !== 0) forgetLauncher(state)
+      // A verdict command's "found something" exit with its JSON answer is an answer (`spec.findings`): the CLI was
+      // reached, so the launcher is kept, and the run is not a failure. Any other non-zero exit is one.
+      // The answer counts only when it is complete, nothing outside it reports a failure (judgeFindings), and it agrees
+      // with the exit: a "found something" exit whose answer found nothing is not consistent, so it stays a failure.
+      const judged = judgeFindings(spec.findings, result)
+      const verdict = judged.answer
+      const isFinding = verdict !== null && result.exitCode !== 0 && spec.findings?.exits.includes(result.exitCode) === true && spec.findings.found(verdict)
+      const inconsistent = verdict !== null && !isFinding && spec.findings?.exits.includes(result.exitCode) === true ? `exit ${result.exitCode}, but its answer does not say it found something` : undefined
+      const answered = result.exitCode === 0 || isFinding
+
+      if (!answered) forgetLauncher(state)
       const answer = /"success"\s*:\s*(true|false)/.exec(result.stdout)?.[1]
       const error = /"error"\s*:\s*"([^"]{0,160})"/.exec(result.stdout)?.[1] ?? /\[ERROR\]\s*(.{0,160})/.exec(result.stdout)?.[1]
-      // `mcp exec` wraps a tool's failure as `"isError": true` with its message escaped inside: that is a failure too.
-      const ok = result.exitCode === 0 && answer !== 'false' && error === undefined && !/"isError"\s*:\s*true/.test(result.stdout)
+      // A verdict answer is judged by its own top-level keys: it quotes the hostile text, so a substring search would fail it.
+      // Other output keeps the substring checks; `mcp exec` wraps a tool's failure as `"isError": true` with its message escaped inside.
+      const ok = answered && (verdict !== null ? !answerFailed(verdict) : answer !== 'false' && error === undefined && !/"isError"\s*:\s*true/.test(result.stdout))
+      const why = () => explainFailure(argv, result) ?? ((result.exitCode !== 0 ? judged.reason ?? inconsistent : undefined) || failureReason(result) || `exit ${result.exitCode}`)
+      // A reader sees the answer itself when there is one, so a banner object printed before it is not what it draws.
+      const shown = verdict !== null ? JSON.stringify(verdict) : result.stdout
+      let head: string | undefined
 
       // A lab run's output goes to the lab's result panel, scrolled from its top; the footer keeps the one-line outcome.
       if (spec.lab !== undefined) {
-        panel.result = { id: spec.lab, label: spec.label, ok, exitCode: result.exitCode, ...(spec.note !== undefined && { note: spec.note }), lines: prettyLines(spec.read?.(result.stdout, result.stderr, ok) ?? (spec.lines ?? ((out, err) => labLines(spec.lab ?? '', out, err)))(result.stdout, result.stderr)), atMs: Date.now() }
+        const lines = prettyLines(spec.read?.(shown, result.stderr, ok) ?? (spec.lines ?? ((out, err) => labLines(spec.lab ?? '', out, err)))(shown, result.stderr))
+
+        panel.result = { id: spec.lab, label: spec.label, ok, exitCode: result.exitCode, ...(spec.note !== undefined && { note: spec.note }), lines, atMs: Date.now() }
         state.select.item = 0
+        head = lines[0] === undefined ? undefined : plain(lines[0], 120)
       }
+      // The one-line outcome carries the verdict, so `console_run` and `console_state` answer with it (UNSAFE · 2 threats).
+      const said = isFinding ? `answered: ${head ?? 'findings in its JSON'} (exit ${result.exitCode} means it found something)` : head !== undefined ? `answered: ${head}` : null
       // Keyed on the exit, not on `ok`: relay text in a read may carry an "error" key of its own.
-      if (result.exitCode === 0) spec.onOutput?.(result.stdout)
+      if (answered) spec.onOutput?.(result.stdout)
 
       if (spec.isReadOnly === true) {
-        say(spec.label, ok, ok ? 'the ruflo CLI answered:' : explainFailure(argv, result) ?? (plain(error ?? result.stderr, 160) || `exit ${result.exitCode}`), spec.lab === undefined ? outputLines(result.stdout) : undefined)
+        say(spec.label, ok, ok ? said ?? 'the ruflo CLI answered:' : why(), spec.lab === undefined ? outputLines(result.stdout) : undefined)
 
         return
       }
@@ -117,7 +138,7 @@ export function createRunner(state: State, host: Host, deps: RunnerDeps): Runner
         label: spec.label,
         ok: ok && verified !== 'no',
         verified,
-        detail: ok ? `${spec.argv === undefined ? 'ruflo' : 'the command'} answered ok; expected ${spec.expect}` : explainFailure(argv, result) ?? (plain(error ?? result.stderr, 160) || `exit ${result.exitCode}`),
+        detail: ok ? `${spec.argv === undefined ? 'ruflo' : 'the command'} ${said ?? 'answered ok'}; expected ${spec.expect}` : why(),
         atMs: Date.now(),
       }
     } catch (error) {
