@@ -2,6 +2,11 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-console`.
 
+## 0.40.8 — 2026-10-09
+- fix: an ADR scope glob with many stars no longer freezes the console: the matcher is a bounded two-pointer scan instead of a regex (a 16-star glob against a short path took 38 s; it now takes microseconds, at the real input caps under 10 ms for 9,600 pairs); results are identical on legitimate globs (ADR-480)
+- fix: an ADR title over 120 characters is refused with the count on every path (the page field, the `adr-propose` palette entry, `/ruflo run`, `console_run`) instead of being cut into the file name, and a draft whose title was shortened from a mission's objective says so on the confirm card (ADR-481)
+- fix: the ADR digest handed to a spawned subagent is checked against the console's exact shape and re-rendered with each record's text quoted; a plugin named `__proto__`, `constructor` or `toString` can no longer corrupt the What's new record (#3941, #3942, thanks @proffesor-for-testing)
+
 ## 0.40.7 — 2026-10-09
 - fix: the console's disk writes work on macOS and the BSDs: BSD `dd` and `install` refuse `oflag=append`, `conv=excl` and `-D`, so every append (Events, Timeline, the autopilot journal), exclusive create (ADR records, exports, `.gitignore`), create-with-folders and the journal archive copy failed there. The host is asked once (`uname -s`, with its own 3 s deadline and a `process.platform` fallback); Linux keeps the exact GNU argv, other kernels run one of seven constant `sh -c` scripts (frozen set, the path only ever as quoted `$1`, a link or non-regular target refused, `set -C` for O_EXCL), and a failed ADR write says why instead of "it may have appeared meanwhile" (#3938, #3939, thanks @proffesor-for-testing)
 

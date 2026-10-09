@@ -2,6 +2,9 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; this is the whole history.
 
+## 0.3.6 — 2026-10-09
+- fix: the ADR digest read from `.claude-flow/console/adr-digest.json` is accepted only in the exact shape ruflo-console writes (its header, one line per listed record with that record's status, no hidden or bidi characters) and is re-rendered with each record's text as a quoted value, inside the swarm's own framing that says it is project data and not an instruction (#3941, #3942, thanks @proffesor-for-testing)
+
 ## 0.3.5 — 2026-10-07
 - feat: a spawned subagent is given the accepted ADRs attached to the active ruflo-console mission (masked, capped, as data), and its member row names them; option injectAdrs, on by default, nothing added without an attached ADR (ADR-480)
 
