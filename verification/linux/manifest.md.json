@@ -1,15 +1,15 @@
 {
   "manifest": {
     "schema": "ruflo-witness/v1",
-    "issuedAt": "2026-10-09T17:07:33.832Z",
-    "gitCommit": "0f6a464a7b027b2001ea8795e17555cac5cb9f04",
-    "branch": "release/3.56.2",
+    "issuedAt": "2026-10-09T21:34:46.666Z",
+    "gitCommit": "11a8cf79a77ae98baa18eb2efa1b7940b8db001b",
+    "branch": "release/3.56.3",
     "os": "linux",
     "releases": {
-      "ruflo": "3.56.2",
-      "claude-flow": "3.56.2",
-      "@claude-flow/cli": "3.56.2",
-      "@claude-flow/memory": "3.0.2"
+      "ruflo": "3.56.3",
+      "claude-flow": "3.56.3",
+      "@claude-flow/cli": "3.56.3",
+      "@claude-flow/memory": "3.0.3"
     },
     "summary": {
       "totalFixes": 117,
@@ -21,7 +21,7 @@
         "id": "F1",
         "desc": "hooks_metrics persistence",
         "file": "v3/@claude-flow/cli/dist/src/mcp-tools/hooks-tools.js",
-        "sha256": "6c246951a1284a7d51eeac819ab2e683839915e1b8cf440ddcfcc4d249120037",
+        "sha256": "05091f26957d3cb093ac8b01486dab536ec7630b7091451dc6658ff7128fd14f",
         "marker": "getIntelligenceStatsFromMemory",
         "markerVerified": true
       },
@@ -29,7 +29,7 @@
         "id": "F2",
         "desc": "worker-dispatch honesty",
         "file": "v3/@claude-flow/cli/dist/src/mcp-tools/hooks-tools.js",
-        "sha256": "6c246951a1284a7d51eeac819ab2e683839915e1b8cf440ddcfcc4d249120037",
+        "sha256": "05091f26957d3cb093ac8b01486dab536ec7630b7091451dc6658ff7128fd14f",
         "marker": "'no-daemon'",
         "markerVerified": true
       },
@@ -85,7 +85,7 @@
         "id": "F9",
         "desc": "F9 router probe + actionable error",
         "file": "v3/@claude-flow/cli/dist/src/memory/memory-bridge.js",
-        "sha256": "4aaaf93a9076db4a9e79184d27e82c0ec7156f01b53b12a464b150f676f1cf3f",
+        "sha256": "824944998c6bbdd03af83d6d027c3c4cd36e22540a3835bcebfd0214ed0078e4",
         "marker": "IntentRouter",
         "markerVerified": true
       },
@@ -93,7 +93,7 @@
         "id": "F10",
         "desc": "intelligence_attention real patterns",
         "file": "v3/@claude-flow/cli/dist/src/mcp-tools/hooks-tools.js",
-        "sha256": "6c246951a1284a7d51eeac819ab2e683839915e1b8cf440ddcfcc4d249120037",
+        "sha256": "05091f26957d3cb093ac8b01486dab536ec7630b7091451dc6658ff7128fd14f",
         "marker": "real-flash-attention+memory",
         "markerVerified": true
       },
@@ -117,7 +117,7 @@
         "id": "#1697",
         "desc": "rvf-wasm overrides",
         "file": "package.json",
-        "sha256": "b629f621c995f687461996e859171ace152deb02bea805bbcc5a1e982f477975",
+        "sha256": "1ca284cc838089d8996c17aa94f70bf2976d054c9da06632f7969465c9f3b06d",
         "marker": "@ruvector/rvf-wasm",
         "markerVerified": true
       },
@@ -141,7 +141,7 @@
         "id": "#1721",
         "desc": "postinstall copies all dist/src/* siblings",
         "file": "v3/@claude-flow/cli/package.json",
-        "sha256": "e91d3d6efecc79f6ff63e92a3ea3977e2540a6a116ef0d408280ebcc85ee08ad",
+        "sha256": "749db429d722266fb7e606be5a3afa22ce630d072dc0771d0418a2f205316e4d",
         "marker": "postinstall.cjs",
         "markerVerified": true
       },
@@ -189,7 +189,7 @@
         "id": "G7-gnn",
         "desc": "gnnService activated",
         "file": "v3/@claude-flow/cli/dist/src/memory/memory-bridge.js",
-        "sha256": "4aaaf93a9076db4a9e79184d27e82c0ec7156f01b53b12a464b150f676f1cf3f",
+        "sha256": "824944998c6bbdd03af83d6d027c3c4cd36e22540a3835bcebfd0214ed0078e4",
         "marker": "GNNService",
         "markerVerified": true
       },
@@ -197,7 +197,7 @@
         "id": "G7-rvf",
         "desc": "rvfOptimizer activated",
         "file": "v3/@claude-flow/cli/dist/src/memory/memory-bridge.js",
-        "sha256": "4aaaf93a9076db4a9e79184d27e82c0ec7156f01b53b12a464b150f676f1cf3f",
+        "sha256": "824944998c6bbdd03af83d6d027c3c4cd36e22540a3835bcebfd0214ed0078e4",
         "marker": "RVFOptimizer",
         "markerVerified": true
       },
@@ -205,7 +205,7 @@
         "id": "G7-mut",
         "desc": "mutationGuard activated",
         "file": "v3/@claude-flow/cli/dist/src/memory/memory-bridge.js",
-        "sha256": "4aaaf93a9076db4a9e79184d27e82c0ec7156f01b53b12a464b150f676f1cf3f",
+        "sha256": "824944998c6bbdd03af83d6d027c3c4cd36e22540a3835bcebfd0214ed0078e4",
         "marker": "MutationGuard",
         "markerVerified": true
       },
@@ -213,7 +213,7 @@
         "id": "G7-att",
         "desc": "attestationLog activated with sqlite db",
         "file": "v3/@claude-flow/cli/dist/src/memory/memory-bridge.js",
-        "sha256": "4aaaf93a9076db4a9e79184d27e82c0ec7156f01b53b12a464b150f676f1cf3f",
+        "sha256": "824944998c6bbdd03af83d6d027c3c4cd36e22540a3835bcebfd0214ed0078e4",
         "marker": "attestation.db",
         "markerVerified": true
       },
@@ -221,7 +221,7 @@
         "id": "G7-gvb",
         "desc": "GuardedVectorBackend wraps mutationGuard+log",
         "file": "v3/@claude-flow/cli/dist/src/memory/memory-bridge.js",
-        "sha256": "4aaaf93a9076db4a9e79184d27e82c0ec7156f01b53b12a464b150f676f1cf3f",
+        "sha256": "824944998c6bbdd03af83d6d027c3c4cd36e22540a3835bcebfd0214ed0078e4",
         "marker": "GuardedVectorBackend",
         "markerVerified": true
       },
@@ -341,7 +341,7 @@
         "id": "CAP-MCP-hooks-tools",
         "desc": "MCP tools (62): build-agents, explain, hooks_build-agents, …",
         "file": "v3/@claude-flow/cli/dist/src/mcp-tools/hooks-tools.js",
-        "sha256": "6c246951a1284a7d51eeac819ab2e683839915e1b8cf440ddcfcc4d249120037",
+        "sha256": "05091f26957d3cb093ac8b01486dab536ec7630b7091451dc6658ff7128fd14f",
         "marker": "build-agents",
         "markerVerified": true
       },
@@ -461,7 +461,7 @@
         "id": "#1795",
         "desc": "umbrella package missing cli-core dep (ERR_MODULE_NOT_FOUND)",
         "file": "package.json",
-        "sha256": "b629f621c995f687461996e859171ace152deb02bea805bbcc5a1e982f477975",
+        "sha256": "1ca284cc838089d8996c17aa94f70bf2976d054c9da06632f7969465c9f3b06d",
         "marker": "@claude-flow/cli-core",
         "markerVerified": true
       },
@@ -629,7 +629,7 @@
         "id": "#1825",
         "desc": "hotfix: workspace: protocol leak in cli optionalDependencies",
         "file": "v3/@claude-flow/cli/package.json",
-        "sha256": "e91d3d6efecc79f6ff63e92a3ea3977e2540a6a116ef0d408280ebcc85ee08ad",
+        "sha256": "749db429d722266fb7e606be5a3afa22ce630d072dc0771d0418a2f205316e4d",
         "marker": "\"@claude-flow/memory\": \"3.",
         "markerVerified": true
       },
@@ -957,10 +957,10 @@
   },
   "integrity": {
     "manifestHashAlgo": "sha256",
-    "manifestHash": "053524b95c1d9039e378abb1fd5bbc858e848cc9175b2eef9d2e2cbe199c2590",
+    "manifestHash": "4e49840e5eaff6ef9c701ecae3e8bf29a5caf419cbe93673b100b1f872353f58",
     "signatureAlgo": "ed25519",
-    "publicKey": "5d999545e02826b6e560cb520aa6f435804514c5f8c16718fa98a409a120038f",
-    "signature": "5644d963a4e5a7a5fff0ae78d5e91d4d5b072fec2c5e08a2580137f21335c4a5f92b0ffb863a5ddec37be32e3045177feee17388e83436cf478a3c752f50ae0c",
+    "publicKey": "3a32220d100fc7018774410525950aeef2c1642de55bce987fe3b4030b5f846c",
+    "signature": "16535b79427a0098c16f5f68136df000468b7c49e1eec02325a7d1b42e7ded58ed1b9e9d0f7939976e3b714fc2f8647372747112c27490b0e6d136019c747e00",
     "seedDerivation": "sha256(gitCommit + ':ruflo-witness/v1')"
   }
 }
