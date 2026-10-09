@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.56.2] - 2026-10-09
+
+Patch release: one bug fix in `@claude-flow/cli`. No leaf package changed since 3.56.1 (`git diff v3.56.1..HEAD -- v3/@claude-flow` touches only `cli`). The `ruflo-console` fixes merged since 3.56.1 (console 0.40.4-0.40.8, #3933, #3935, #3938, #3941, #3942) and `ruflo-swarm` 0.3.6 ship through the plugin marketplace, not this npm release.
+
+### Fixed
+
+- `task_update` accepts only the five task statuses; a task stored as `complete` is no longer shown as pending or re-dispatched (#3932, fixes #3931).
+
 ## [3.56.1] - 2026-10-08
 
 Patch release: five bug fixes (four in `@claude-flow/cli`, one console). No leaf package changed since 3.56.0 (`git diff v3.56.0..HEAD -- v3/@claude-flow` touches only `cli`), and no behaviour is removed. The `ruflo-console` plugin fixes merged since 3.56.0 (console 0.40.2/0.40.3, #3917, #3924) ship through the plugin marketplace, not this npm release.
