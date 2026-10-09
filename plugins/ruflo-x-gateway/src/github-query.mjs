@@ -329,7 +329,7 @@ export function createGithubQuery({
 
     async registryLatest({ package: name } = {}) {
       const n = validateNpmName(name);
-      const d = parse(await get(`${NPM_REGISTRY}/${n.replace('/', '%2f')}/latest`, { accept: 'application/json', authed: false }));
+      const d = parse(await get(`${NPM_REGISTRY}/${n.replace(/\//g, '%2f')}/latest`, { accept: 'application/json', authed: false }));
       const who = [...(d.maintainers || []).map((m) => m?.name), d._npmUser?.name].filter(Boolean).map((s) => String(s).toLowerCase());
       if (!who.some((w) => npmMaintainers.includes(w))) throw new GithubQueryError('owner_not_allowed', 'package is not maintained by an allowlisted npm account');
       return { name: d.name, latest: d.version, description: d.description ?? null, license: d.license ?? null, homepage: d.homepage ?? null, repository: d.repository?.url ?? null };
