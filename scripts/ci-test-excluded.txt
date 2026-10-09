@@ -48,6 +48,7 @@ plugins/ruflo-mods/tests/agents.test.ts
 plugins/ruflo-mods/tests/compact.test.ts
 plugins/ruflo-mods/tests/delivery.test.ts
 plugins/ruflo-mods/tests/describe.test.ts
+plugins/ruflo-mods/tests/grounding.test.ts
 plugins/ruflo-mods/tests/probe.test.ts
 plugins/ruflo-mods/tests/ranked-context.test.ts
 plugins/ruflo-mods/tests/rollup.test.ts

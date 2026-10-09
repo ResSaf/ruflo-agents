@@ -11,9 +11,9 @@ step() { printf "→ %s ... " "$1"; }
 ok()   { printf "PASS\n"; PASS=$((PASS+1)); }
 bad()  { printf "FAIL: %s\n" "$1"; FAIL=$((FAIL+1)); }
 
-step "1. plugin.json declares ruflo-console 0.41.0"
+step "1. plugin.json declares ruflo-console 0.42.0"
 grep -q '"name": "ruflo-console"' "$ROOT/.claude-plugin/plugin.json" \
-  && grep -q '"version": "0.41.0"' "$ROOT/.claude-plugin/plugin.json" && ok || bad "name/version"
+  && grep -q '"version": "0.42.0"' "$ROOT/.claude-plugin/plugin.json" && ok || bad "name/version"
 
 step "2. hooks.json names exactly one module and no classic hook commands"
 grep -q '"modules": \["./register.ts"\]' "$HOOKS/hooks.json" && ! grep -q '"command"' "$HOOKS/hooks.json" \
@@ -126,6 +126,12 @@ if grep -qE "^## ${version//./\\.} [—–-] [0-9]{4}-[0-9]{2}-[0-9]{2}\s*$" "$R
 
 step "19. the ADR code reads and writes only the project's files: no network, no shell, no ruflo-repo path (ADR-480)"
 if ! grep -qE "fetchText|httpSend|spawn\(|v3/docs/adr|check-adr-links|\bsh -c|bash -c" "$HOOKS/adr.ts" "$HOOKS/adr-palette.ts" "$HOOKS/views/adr.ts" "$HOOKS/data/adr.ts" "$HOOKS/data/adr-write.ts" "$HOOKS/data/adr-scope.ts"; then ok; else bad "an ADR module reaches the network, a shell or a ruflo path"; fi
+
+step "20. the optional ruvnet-brain aid is detect-only and removable: no tool call, shell, network, write or prompt from grounding.ts, no brain tool id anywhere, nothing of the brain vendored (ADR-487)"
+brain_calls=$(grep -nE "toolCall|toolCheck|\\\$\\.tool|\\.run\\(|spawn|fetchText|httpSend|storeSet|fillPrompt|submitPrompt|\\.fs\\." "$HOOKS/grounding.ts" | grep -vE '^[0-9]+:\s*(\*|//|/\*)' || true)
+brain_ids=$(grep -rnE "mcp__plugin_ruvnet|plugin_ruvnet-brain" "$HOOKS" || true)
+brain_files=$(find "$ROOT" -iname '*ruvnet-brain*' -not -path '*/node_modules/*' 2>/dev/null || true)
+[[ -z "$brain_calls" && -z "$brain_ids" && -z "$brain_files" ]] && ok || bad "calls: $brain_calls ids: $brain_ids files: $brain_files"
 
 printf "\n%d passed, %d failed\n" "$PASS" "$FAIL"
 [[ $FAIL -eq 0 ]]

@@ -86,3 +86,4 @@ Other ADRs outside 404-451 that the mod ADRs lean on: 150 (removable integration
 - **ADR files whose own Status line differs from this index:** none for 450 and 451, whose Status lines now carry the same implementation summary (section 9 of 450, section 8 of 451 hold the tables). 405, 406 and 449 are "Proposed" in both.
 - **ADRs with no stated parent:** 434, 436, 437, 438, 439, 440, 441 carry no `Builds on` or `Extends` line.
 - **2026-10-07 additions.** Rows for 477, 478 and 479 were added. 478's link is to a file added by the change that builds that page. 479 is not a mod ADR; it is listed because 476 (hive-mind gating) and the toasts sit on the same MCP and console surfaces. ADRs 454 to 476 are not in these tables.
+| 487 | Optional ruvnet-brain grounding (detect-only) in the console and mods | Accepted | 10-09 | 404, 443, 444, 481 | — | this PR | console 0.42.0, mods 0.5.0 | `grounding.spec`, `grounding.test.ts` |

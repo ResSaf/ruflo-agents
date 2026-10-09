@@ -2,6 +2,11 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-console`.
 
+## 0.42.0 — 2026-10-09
+- feat: an optional, detect-only Grounding line for Stuart Kerr's third-party ruvnet-brain plugin: Overview says whether it is on, not installed, installed but disabled, or unknown (read from the plugin list and your settings; ruflo works the same without it, and nothing of it is bundled or copied) (ADR-487)
+- feat: with the brain on and a mission that names the ruvnet stack (RuVector, RVF, AgentDB, ruflo ...), Claude's mission context carries one fixed line pointing at `search_ruvnet`; Settings → "RuvNet Brain nudge" turns it off (default on). The console never calls the brain and no mission text enters the line
+- feat: Settings → "RuvNet Brain install hint" (default off): one dismissible toast per session and an Overview line link its repository when it is not installed; the console never installs it
+
 ## 0.41.0 — 2026-10-09
 - feat: session workspace on the Room (ADR-486): a Needs you queue (approvals, questions, failures, finished work) across Claude Code, Codex and Ruflo sessions, a session browser grouped by repository and worktree, and a preview of the selected session (latest response, current tool, edited files, test result, cost labelled reported, estimated or unavailable). Discovery is local and read-only: no model call, no process, no wake. Sessions with an ambiguous identity go to an unassigned bucket and raise nothing. A finished session clears only after its preview was drawn. The Overview shows the four counts. Options: sessionWorkspace, sessionPreview (both on).
 - feat: ruflo-mods can show those four counts. The console's only write is that summary (counts only, .claude-flow/console/attention.json, in a ruflo project, when a count changes), through the same path Events persistence uses.

@@ -19,6 +19,7 @@ export type ModOptions = {
   readonly capabilityProbe: boolean
   readonly sessionRollup: boolean
   readonly sessionAttention: boolean
+  readonly grounding: boolean
   readonly modTrust: TrustPolicy
   readonly modTrustAllow: ReadonlySet<string>
 }
@@ -51,6 +52,7 @@ export function readOptions(options: PluginOptions | undefined): ModOptions {
     capabilityProbe: bool(o.capabilityProbe, false),
     sessionRollup: bool(o.sessionRollup, false),
     sessionAttention: bool(o.sessionAttention, false),
+    grounding: bool(o.grounding, false),
     modTrust: TRUST.includes(o.modTrust as TrustPolicy) ? (o.modTrust as TrustPolicy) : 'observe',
     modTrustAllow: names(o.modTrustAllow),
   }

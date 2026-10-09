@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Structural + security smoke for ruflo-mods v0.4.0 (ADR-404, ADR-447).
+# Structural + security smoke for ruflo-mods v0.5.0 (ADR-404, ADR-447).
 # Static only: CI has no Claude Code, so the hooks module's behaviour is held
 # by v3/@claude-flow/cli/__tests__/mods/*.test.ts and, where function hooks are
 # on, by `claude plugin test plugins/ruflo-mods`.
@@ -12,9 +12,9 @@ ok()   { printf "PASS\n"; PASS=$((PASS+1)); }
 bad()  { printf "FAIL: %s\n" "$1"; FAIL=$((FAIL+1)); }
 HOOKS="$ROOT/hooks"
 
-step "1. plugin.json declares ruflo-mods 0.4.0"
+step "1. plugin.json declares ruflo-mods 0.5.0"
 grep -q '"name": "ruflo-mods"' "$ROOT/.claude-plugin/plugin.json" \
-  && grep -q '"version": "0.4.0"' "$ROOT/.claude-plugin/plugin.json" && ok || bad "name/version"
+  && grep -q '"version": "0.5.0"' "$ROOT/.claude-plugin/plugin.json" && ok || bad "name/version"
 
 step "2. hooks.json names exactly one module and no classic hook commands"
 grep -q '"modules": \["./register.ts"\]' "$HOOKS/hooks.json" && ! grep -q '"command"' "$HOOKS/hooks.json" \
@@ -79,6 +79,11 @@ step "14. every plugin's toast policy copy is byte-identical to the canonical ho
 if [[ -f "$ROOT/../../scripts/sync-toast-policy.mjs" ]] && command -v node >/dev/null 2>&1; then
   out=$(node "$ROOT/../../scripts/sync-toast-policy.mjs" --check 2>&1) && ok || bad "$out"
 else printf "SKIP (no node or no repo scripts/)\n"; fi
+
+step "15. the optional ruvnet-brain status is detect-only: no hook, verdict, write, call or prompt from grounding.ts, no brain tool id anywhere (ADR-487)"
+hits=$(grep -nE "\\bon\\(|decision|deny|\\\$\\.|\\.write|spawn|tool\\.call|submit" "$HOOKS/grounding.ts" | grep -vE '^[0-9]+:\s*(\*|//|/\*)' || true)
+ids=$(grep -rnE "mcp__plugin_ruvnet|plugin_ruvnet-brain|search_ruvnet" "$HOOKS" || true)
+[[ -z "$hits" && -z "$ids" ]] && ok || bad "grounding.ts must only read and report: $hits $ids"
 
 printf "\n%d passed, %d failed\n" "$PASS" "$FAIL"
 [[ $FAIL -eq 0 ]]
