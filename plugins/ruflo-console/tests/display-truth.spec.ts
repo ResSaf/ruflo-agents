@@ -145,24 +145,26 @@ describe('swarm: its own agent count and age, never the agent store', () => {
 })
 
 describe('labels agree with the gate', () => {
-  it('every security and performance entry is gated as the cost tier it shows (writes → write, network → network)', () => {
+  it('every security and performance entry is gated as the cost tier it shows (writes → write, network → network); an entry that removes its probe file stays a delete', () => {
     for (const entry of [...SECURE, ...PERF]) {
       if (entry.cost === 'read') continue
 
-      expect(classOf({ label: entry.label, args: entry.args, expect: '', ...(entry.note !== undefined && { note: entry.note }) }), entry.id).toBe(entry.cost === 'writes' ? 'write' : 'network')
+      expect(classOf({ label: entry.label, args: entry.args, expect: '', ...(entry.note !== undefined && { note: entry.note }) }), entry.id).toBe(entry.note?.includes('removes') === true ? 'delete' : entry.cost === 'writes' ? 'write' : 'network')
     }
   })
 
-  it('perf-bottleneck at read is refused as a write (it was a delete needing full), and runs at write', async () => {
-    const read = rig()
+  it('perf-bottleneck and perf-optimize stay a delete: refused at write, run at full (the gate is not lowered)', async () => {
+    for (const id of ['perf-bottleneck', 'perf-optimize']) {
+      const write = rig()
 
-    Object.assign(settingsOf(read.state).ai, { modelControl: 'read', modelConfirm: 'auto' })
-    expect(await callTool('console_run', { id: 'perf-bottleneck' }, read.deps)).toMatch(/is a write action/)
+      Object.assign(settingsOf(write.state).ai, { modelControl: 'write', modelConfirm: 'auto' })
+      expect(await callTool('console_run', { id }, write.deps), id).toMatch(/is a delete action/)
 
-    const write = rig()
+      const full = rig()
 
-    Object.assign(settingsOf(write.state).ai, { modelControl: 'write', modelConfirm: 'auto' })
-    expect(await callTool('console_run', { id: 'perf-bottleneck' }, write.deps)).not.toMatch(/^Refused/)
+      Object.assign(settingsOf(full.state).ai, { modelControl: 'full', modelConfirm: 'auto' })
+      expect(await callTool('console_run', { id }, full.deps), id).not.toMatch(/^Refused/)
+    }
   })
 
   it('mission-goal does not claim "nothing is written": it is gated as a write, like console_set goal, and it replaces the goal', async () => {

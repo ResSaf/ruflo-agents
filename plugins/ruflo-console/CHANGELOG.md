@@ -2,6 +2,9 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-console`.
 
+## 0.40.6 — 2026-10-09
+- fix: times read as times and a swarm reads as itself: the AgentDB mod's "written" age no longer shows 100020735d ago or 0s for a future stamp (it reads n/a), a swarm's agent count and status agree on Overview, Swarm, the topology graph, the status bar and Workflows (a swarm with no listed members says so; "stalled" needs evidence, not just an old record), Workflows agent ages show days, and `mission-goal` says it replaces the goal instead of "nothing is written" (#3935, #3936, thanks @proffesor-for-testing)
+
 ## 0.40.5 — 2026-10-09
 - fix: a verdict command's "found something" exit (security scans, AIDefence checks, MetaHarness mcp-scan, threat-model and drift) is an answer, not a failure: Claude is told what was found, and a failed run names its real reason (the [ERROR] line, a wrapped tool error) instead of the CLI's [WARN] banner; the answer is read out of stdout in bounded time (#3933, #3934, thanks @proffesor-for-testing)
 

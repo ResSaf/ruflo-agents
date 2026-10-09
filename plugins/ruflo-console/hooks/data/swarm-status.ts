@@ -44,7 +44,7 @@ export function uniqueAgents(agents: readonly AgentRecord[]): AgentRecord[] {
 export function swarmStatusOf(swarm: SwarmInfo, nowMs: number, agents: readonly AgentRecord[]): SwarmStatus {
   const updatedMs = sinceOf(msOf(swarm.updatedAt), nowMs)
   const own = swarmMembersOf(swarm, agents)
-  const newest = Math.max(...own.members.map(agent => sinceOf(agent.createdAtMs, nowMs) ?? Number.POSITIVE_INFINITY))
+  const newest = own.members.reduce((latest, agent) => Math.max(latest, sinceOf(agent.createdAtMs, nowMs) ?? Number.POSITIVE_INFINITY), Number.NEGATIVE_INFINITY)
   const quiet = own.members.length > 0 && !own.members.some(agent => BUSY.test(agent.status)) && Number.isFinite(newest) && nowMs - newest > SWARM_STALE_MS
   const isStale = swarm.status === 'running' && updatedMs !== undefined && nowMs - updatedMs > SWARM_STALE_MS && quiet
 
