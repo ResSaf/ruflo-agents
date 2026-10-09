@@ -12,7 +12,7 @@ import { rowOf } from '../hooks/data/sessions-index'
 import type { Host } from '../hooks/host'
 import { mirrorAttention, queueOf, scanSessions, selectRow, workspaceOf } from '../hooks/sessions'
 import { viewText } from '../hooks/views/pane'
-import { addClaude, CLAUDE, CODEX, fsOn, NOW, uuid } from './fixtures/sessions-fs'
+import { addClaude, CLAUDE, CODEX, fsOn, newDisk, NOW, uuid } from './fixtures/sessions-fs'
 import { ctxOf, drawn, world } from './fixtures/sessions-world'
 
 describe('hostile and unreadable input', () => {
@@ -218,6 +218,17 @@ describe('adapters on their own', () => {
     expect(result.state).toBe('ok')
     expect(result.rows.map(row => row.status).sort()).toEqual(['done', 'failed', 'working'])
     expect(result.rows.find(row => row.status === 'failed')?.preview?.latest).toBe('turn aborted: interrupted')
+  })
+
+  it('reads a sub-agent rollout’s own identity, not the parent’s session_meta that follows it', async () => {
+    const disk = newDisk()
+    const rec = (type: string, payload: Record<string, unknown>) => JSON.stringify({ timestamp: new Date(NOW - 5000).toISOString(), type, payload })
+
+    disk.files.set(`${CODEX}/sessions/2026/10/09/rollout-2026-10-09T10-00-00-${uuid(31)}.jsonl`, { content: [rec('session_meta', { id: uuid(31), cwd: '/work/repo-a' }), rec('session_meta', { id: uuid(32), cwd: '/elsewhere' }), rec('event_msg', { type: 'task_complete', last_agent_message: 'TOK31X' })].join('\n') + '\n', mtimeMs: NOW - 5000 })
+
+    const result = await codexAdapter().scan({ fs: fsOn(disk), claudeDir: null, codexDir: CODEX, nowMs: NOW, full: true })
+
+    expect(result.rows[0]).toMatchObject({ unassigned: null, cwd: '/work/repo-a', status: 'done' })
   })
 
   it('finds a Claude session started after the first pass without a full relist', async () => {

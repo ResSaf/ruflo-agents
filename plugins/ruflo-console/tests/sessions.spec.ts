@@ -87,6 +87,23 @@ describe('discovery and identity', () => {
   })
 })
 
+describe('the Room layout', () => {
+  it('keeps the queue open and the Sessions list folded until a jump opens it', async () => {
+    const w = world()
+
+    await scanSessions(w.state, w.host, true, NOW)
+    w.state.sections.delete('room/sessions')
+
+    const closed = drawn(w.state, w.host)
+
+    expect(closed).toContain('Needs you')
+    expect(closed).toContain('Sessions')
+    expect(closed).not.toContain('Claude Code:')
+    sessionActions(w.state, w.host).jump(queueOf(w.state).find(item => item.rowKey !== null)!.id)
+    expect(drawn(w.state, w.host)).toContain('Claude Code:')
+  })
+})
+
 describe('the attention queue', () => {
   it('raises the four kinds in order, from sessions Ruflo did not start too, and nothing for an unassigned row', async () => {
     const w = world()

@@ -21,7 +21,11 @@ export const CODEX_CAPS: Capabilities = {
 
 export type CodexSummary = { id: string | null; cwd: string | null; lastAtMs: number | null; open: boolean; pendingTool: string | null; preview: Preview; signals: Signals; title: string | null }
 
-export function summarizeCodex(text: string): CodexSummary {
+/**
+ * `whole`: the text starts at the file's first line. Only then is `session_meta` read, and only the FIRST one: a sub-agent's rollout carries its
+ * parent's `session_meta` later in the file (seen on this machine: 5 of 19 recent rollouts), which is lineage, not a second identity.
+ */
+export function summarizeCodex(text: string, whole = true): CodexSummary {
   const out: CodexSummary = { id: null, cwd: null, lastAtMs: null, open: false, pendingTool: null, preview: { latest: '', tool: null, files: [], test: null }, signals: { question: false, approval: false, failed: false, turnEndedAtMs: null }, title: null }
   const calls = new Map<string, string>()
 
@@ -34,6 +38,7 @@ export function summarizeCodex(text: string): CodexSummary {
     if (at !== undefined) out.lastAtMs = Math.max(out.lastAtMs ?? 0, at)
 
     if (type === 'session_meta') {
+      if (!whole || out.id !== null) return
       out.id = str(payload.id)?.slice(0, 64) ?? out.id
       out.cwd = shown(payload.cwd, 400) || out.cwd
     } else if (type === 'turn_context') out.cwd = shown(payload.cwd, 400) || out.cwd
@@ -171,7 +176,7 @@ export function codexAdapter(): HarnessAdapter & { reset(): void } {
       }
 
       const tracked = [...known.values()].sort((a, b) => b.mtimeMs - a.mtimeMs).slice(0, MAX_TRACKED)
-      const settled = await settle(env.fs, memory, tracked, text => summarizeCodex(text))
+      const settled = await settle(env.fs, memory, tracked, (text, whole) => summarizeCodex(text, whole))
 
       for (const path of [...memory.keys()]) if (!known.has(path)) memory.delete(path)
 

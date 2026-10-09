@@ -16,6 +16,8 @@ import { replaceFile } from './activity-io'
 import type { Host } from './host'
 import type { State } from './state'
 
+/** The fold key of the Sessions section (views/common.ts `section`: present means flipped from its default, which is closed). */
+export const SESSIONS_FOLD = 'room/sessions'
 export const VIEWED_KEY = 'ruflo-console/sessions-viewed'
 const FAST_MS = 1000
 const FULL_MS = 15_000
@@ -207,7 +209,11 @@ export function sessionActions(state: State, host: Pick<Host, 'fs' | 'invalidate
     jump: id => {
       const item = queueOf(state).find(candidate => candidate.id === id)
 
-      if (item?.rowKey != null) selectRow(state, item.rowKey)
+      if (item?.rowKey != null) {
+        selectRow(state, item.rowKey)
+        // The browser starts folded so the Room's own sections stay in view; jumping to a session opens it.
+        state.sections.add(SESSIONS_FOLD)
+      }
       host.invalidate()
     },
     refresh: () => void scanSessions(state, host, true),

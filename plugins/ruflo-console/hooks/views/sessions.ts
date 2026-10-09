@@ -11,7 +11,7 @@ import type { AttentionKind, SessionRow } from '../data/harness'
 import { CAPABILITIES } from '../data/harness'
 import { rowOf } from '../data/sessions-index'
 import { attentionCounts, noteShown, queueOf, workspaceOf } from '../sessions'
-import { ago, button, clip, row, rule, text, THEME, type Ctx } from './common'
+import { ago, button, clip, row, rule, section, text, THEME, type Ctx } from './common'
 import { fullRows } from './full-rows'
 
 const KIND_LABEL: Record<AttentionKind, string> = { 'needs-approval': 'needs your yes', question: 'asked a question', failed: 'failed', 'completed-unread': 'finished' }
@@ -108,16 +108,16 @@ export function sessionRows(ctx: Ctx): RenderElement[] {
   if (queue.length > QUEUE_ROWS) rows.push(text(ctx, ` +${queue.length - QUEUE_ROWS} more`, { dimColor: true }))
 
   const index = ws.index
+  const body: RenderElement[] = []
+  const right = index === null ? 'looking…' : `${index.rows.length} found${index.unassigned > 0 ? ` · ${index.unassigned} unassigned` : ''}`
 
-  rows.push(rule(ctx, 'Sessions', index === null ? 'looking…' : `${index.rows.length} found${index.unassigned > 0 ? ` · ${index.unassigned} unassigned` : ''}`))
-
-  if (index === null) return rows
+  if (index === null) return [...rows, ...section(ctx, 'sessions', 'Sessions', right, body, false)]
 
   for (const report of index.reports) {
     const caps = CAPABILITIES.map(cap => `${cap} ${report.capabilities[cap].supported ? '✓' : '✗'}`).join(' · ')
 
-    rows.push(text(ctx, ` ${report.label}: ${report.state === 'not-detected' ? 'not detected' : report.state === 'failed' ? 'FAILED, showing the last read' : `${report.count} tracked`} · ${clip(report.note, 60)}`, { color: report.state === 'failed' ? THEME.warn : undefined, dimColor: report.state !== 'failed' }))
-    rows.push(text(ctx, `   can: ${caps}`, { dimColor: true }))
+    body.push(text(ctx, ` ${report.label}: ${report.state === 'not-detected' ? 'not detected' : report.state === 'failed' ? 'FAILED, showing the last read' : `${report.count} tracked`} · ${clip(report.note, 60)}`, { color: report.state === 'failed' ? THEME.warn : undefined, dimColor: report.state !== 'failed' }))
+    body.push(text(ctx, `   can: ${caps}`, { dimColor: true }))
   }
 
   let left = SHOWN_ROWS
@@ -125,13 +125,13 @@ export function sessionRows(ctx: Ctx): RenderElement[] {
   for (const group of index.groups) {
     if (left <= 0) break
 
-    rows.push(text(ctx, ` ${group.label}`, { bold: true, color: group.unassigned ? THEME.warn : THEME.head }))
+    body.push(text(ctx, ` ${group.label}`, { bold: true, color: group.unassigned ? THEME.warn : THEME.head }))
 
     for (const found of group.rows.slice(0, left)) {
       const picked = ws.selected === found.key
 
       left -= 1
-      rows.push(
+      body.push(
         row(
           ctx,
           [
@@ -145,16 +145,18 @@ export function sessionRows(ctx: Ctx): RenderElement[] {
     }
   }
 
-  if (index.rows.length > SHOWN_ROWS) rows.push(text(ctx, ` +${index.rows.length - SHOWN_ROWS} more, the newest are listed first`, { dimColor: true }))
+  if (index.rows.length > SHOWN_ROWS) body.push(text(ctx, ` +${index.rows.length - SHOWN_ROWS} more, the newest are listed first`, { dimColor: true }))
 
-  rows.push(row(ctx, [button(ctx, 'sess-prev', '◂ prev', () => ctx.act.sessions.move(-1)), button(ctx, 'sess-next', 'next ▸', () => ctx.act.sessions.move(1)), button(ctx, 'sess-refresh', 'rescan', ctx.act.sessions.refresh)], 'sess-nav'))
+  body.push(row(ctx, [button(ctx, 'sess-prev', '◂ prev', () => ctx.act.sessions.move(-1)), button(ctx, 'sess-next', 'next ▸', () => ctx.act.sessions.move(1)), button(ctx, 'sess-refresh', 'rescan', ctx.act.sessions.refresh)], 'sess-nav'))
 
   const found = rowOf(index, ws.selected)
 
-  if (found === undefined) rows.push(text(ctx, ' Pick a session to see its latest response, current tool, edited files and test result. Browsing never wakes or starts anything.', { dimColor: true }))
-  else rows.push(...previewRows(ctx, found))
+  if (found === undefined) body.push(text(ctx, ' Pick a session to see its latest response, current tool, edited files and test result. Browsing never wakes or starts anything.', { dimColor: true }))
+  else body.push(...previewRows(ctx, found))
 
-  if (ws.note !== '') rows.push(text(ctx, ` ${ws.note}`, { color: THEME.warn }))
+  if (ws.note !== '') body.push(text(ctx, ` ${ws.note}`, { color: THEME.warn }))
+
+  rows.push(...section(ctx, 'sessions', 'Sessions', right, body, false))
 
   return rows
 }

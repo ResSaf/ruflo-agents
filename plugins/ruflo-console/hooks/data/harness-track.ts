@@ -56,10 +56,11 @@ export async function settle<S>(fs: SessionFs, memory: Memory<S>, cands: readonl
     // A file that fits no more of this pass keeps its earlier summary (or none) until the next pass.
     const cost = Math.min(size, 300_000)
 
-    if (budget - cost < 0 && before !== undefined) {
-      const held = { ...before, stale: before.stale ?? 'newer than the last read' }
+    if (budget - cost < 0) {
+      // Not remembered, so the next pass reads it: the row says it has not been read yet instead of waiting silently.
+      const held: Held<S> = before === undefined ? { mtimeMs, size, value: null, noPreview: 'not read yet: the pass reached its read budget', stale: null, whole: false } : { ...before, stale: before.stale ?? 'newer than the last read' }
 
-      memory.set(cand.path, held)
+      if (before !== undefined) memory.set(cand.path, held)
       out.push({ cand: { ...cand, size, mtimeMs }, held })
 
       return

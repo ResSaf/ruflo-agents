@@ -76,7 +76,11 @@ project folders, folders whose mtime moved) and a full relist every 15 s; a clos
 or its last 256 KB where the host offers `readTail`; a line over 400 KB is skipped unparsed, at most 30,000 lines are looked at, and nothing uses
 a backtracking pattern on file text. **The host `$.fs` has no tail read (ADR-473)**, so on the real host a transcript over 2 MB is listed from its
 stat and shows "larger than this host can read" instead of a preview; it is not guessed from the folder name. Previews are computed during the scan,
-so moving the selection does no I/O.
+so moving the selection does no I/O. A pass that reaches its 12 MB read budget leaves the rest unread (the row says "not read yet") for the next pass.
+
+**The 2 s promise has a scope.** Surfacing within 2 s (a 1 s tick plus a pass of a few milliseconds) holds for the tracked sessions: the 60 most
+recently written per adapter. A dormant session outside them that wakes by appending to its file (the folder's mtime does not move) is found by
+the next 15 s relist, not within 2 s. The Sessions list starts folded so the Room's own sections stay in view; "Needs you" is always open.
 
 ### 2.5 Mission context
 
@@ -121,7 +125,7 @@ evidence is verified, from the observation, the ledger and the claims the consol
 
 ## 6. Consequences
 
-- The Room is longer; the section is off with one option, and the preview with another.
+- The Room is longer by the queue (the Sessions list starts folded); the section is off with one option, and the preview with another.
 - On the real host a session over 2 MB has a row and no preview until the host offers a tail read; Codex rollouts with a `session_meta` id that
   differs from the file name (4 here) are unassigned rather than guessed.
 - Claude and Codex approvals are not detected. They will appear when a harness exposes them, behind a verified format and a new capability claim.

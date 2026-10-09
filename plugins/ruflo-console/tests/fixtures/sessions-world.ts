@@ -19,6 +19,8 @@ export function world(opts: { disk?: Disk; tokens?: Record<string, string>; tail
   state.home = HOME
   state.configDir = CLAUDE
   state.view = 'room'
+  // The Sessions section starts folded; the specs look inside it.
+  state.sections.add('room/sessions')
   state.pane.isOpen = true
   state.pane.isShown = true
   state.snapshot = { missions: { observedAtMs: NOW, isTruncated: false, missions: [mission('m1', 'awaitingAuthorization', 'ship TOKM1X'), mission('m2', 'completed', 'done TOKM2X')] }, agents: [{ id: 'a1', type: 'coder', name: 'worker-one', status: 'failed' }], claims: [] } as unknown as State['snapshot']
