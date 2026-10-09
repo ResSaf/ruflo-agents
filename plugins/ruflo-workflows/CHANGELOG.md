@@ -2,6 +2,9 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-workflows`.
 
+## 0.6.5 — 2026-10-09
+- chore: drop the unused `components` key from plugin.json (claude.ai plugin validator warns on it; nothing read it)
+
 ## 0.6.4 — 2026-10-07
 - feat: workflow-create documents the two ADR steps (requires ADR, records ADR) that use the project's own ADRs through ruflo-console's ADRs page (ADR-480)
 

@@ -2325,13 +2325,20 @@ export function shutdownBridge(): Promise<void> {
   shutdownPromise = (async () => {
     if (activeOperations > 0) await new Promise<void>(resolve => { drained = resolve; });
     await Promise.allSettled([...registryPromises.values()]);
+    // A failed PERSIST (AGENTDB_LOCK_UNRECOVERABLE: live lock or concurrent
+    // writer on a sql.js database) means pending changes were not saved. That
+    // is surfaced after cleanup completes; other close errors stay best-effort.
+    let persistFailure: unknown;
     for (const registry of new Set(registryInstances.values())) {
-      try { await registry.shutdown(); } catch { /* best-effort cleanup */ }
+      try { await registry.shutdown(); } catch (err) {
+        if ((err as { code?: unknown } | null)?.code === 'AGENTDB_LOCK_UNRECOVERABLE') persistFailure ??= err;
+      }
     }
     registryInstances.clear();
     registryPromises.clear();
     testRegistryOverride = null;
     bridgeFailureReasons.clear();
+    if (persistFailure) throw persistFailure;
   })().finally(() => { shutdownPromise = null; });
   return shutdownPromise;
 }

@@ -2,6 +2,27 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-console`.
 
+## 0.41.0 — 2026-10-09
+- feat: session workspace on the Room (ADR-486): a Needs you queue (approvals, questions, failures, finished work) across Claude Code, Codex and Ruflo sessions, a session browser grouped by repository and worktree, and a preview of the selected session (latest response, current tool, edited files, test result, cost labelled reported, estimated or unavailable). Discovery is local and read-only: no model call, no process, no wake. Sessions with an ambiguous identity go to an unassigned bucket and raise nothing. A finished session clears only after its preview was drawn. The Overview shows the four counts. Options: sessionWorkspace, sessionPreview (both on).
+- feat: ruflo-mods can show those four counts. The console's only write is that summary (counts only, .claude-flow/console/attention.json, in a ruflo project, when a count changes), through the same path Events persistence uses.
+
+## 0.40.8 — 2026-10-09
+- fix: an ADR scope glob with many stars no longer freezes the console: the matcher is a bounded two-pointer scan instead of a regex (a 16-star glob against a short path took 38 s; it now takes microseconds, at the real input caps under 10 ms for 9,600 pairs); results are identical on legitimate globs (ADR-480)
+- fix: an ADR title over 120 characters is refused with the count on every path (the page field, the `adr-propose` palette entry, `/ruflo run`, `console_run`) instead of being cut into the file name, and a draft whose title was shortened from a mission's objective says so on the confirm card (ADR-481)
+- fix: the ADR digest handed to a spawned subagent is checked against the console's exact shape and re-rendered with each record's text quoted; a plugin named `__proto__`, `constructor` or `toString` can no longer corrupt the What's new record (#3941, #3942, thanks @proffesor-for-testing)
+
+## 0.40.7 — 2026-10-09
+- fix: the console's disk writes work on macOS and the BSDs: BSD `dd` and `install` refuse `oflag=append`, `conv=excl` and `-D`, so every append (Events, Timeline, the autopilot journal), exclusive create (ADR records, exports, `.gitignore`), create-with-folders and the journal archive copy failed there. The host is asked once (`uname -s`, with its own 3 s deadline and a `process.platform` fallback); Linux keeps the exact GNU argv, other kernels run one of seven constant `sh -c` scripts (frozen set, the path only ever as quoted `$1`, a link or non-regular target refused, `set -C` for O_EXCL), and a failed ADR write says why instead of "it may have appeared meanwhile" (#3938, #3939, thanks @proffesor-for-testing)
+
+## 0.40.6 — 2026-10-09
+- fix: times read as times and a swarm reads as itself: the AgentDB mod's "written" age no longer shows 100020735d ago or 0s for a future stamp (it reads n/a), a swarm's agent count and status agree on Overview, Swarm, the topology graph, the status bar and Workflows (a swarm with no listed members says so; "stalled" needs evidence, not just an old record), Workflows agent ages show days, and `mission-goal` says it replaces the goal instead of "nothing is written" (#3935, #3936, thanks @proffesor-for-testing)
+
+## 0.40.5 — 2026-10-09
+- fix: a verdict command's "found something" exit (security scans, AIDefence checks, MetaHarness mcp-scan, threat-model and drift) is an answer, not a failure: Claude is told what was found, and a failed run names its real reason (the [ERROR] line, a wrapped tool error) instead of the CLI's [WARN] banner; the answer is read out of stdout in bounded time (#3933, #3934, thanks @proffesor-for-testing)
+
+## 0.40.4 — 2026-10-09
+- fix: a task an older CLI stored as "complete", "done", "canceled" or "running" reads as its canonical state everywhere the console decides on status: the kanban lane, Mission Control (it is never handed to Claude again), mission cancel, and the workflow task links (#3931, #3932, thanks @proffesor-for-testing)
+
 ## 0.40.3 — 2026-10-08
 - fix: the approvals badge (band "n to approve", menu badge, change notices, and the Approvals header) counts only rows a person can act on; a refused mod or a permission deny has no approve or deny action, stays listed on the page as a notice, and no longer holds the badge up with nothing to press (#3920)
 

@@ -2,6 +2,9 @@
 
 Newest first. One `## <version> — <date>` heading per version, then `feat:`, `fix:`, `breaking:` and `chore:` bullets (ADR-478). Built from git history; older versions: `git log -- plugins/ruflo-mods`.
 
+## 0.4.0 — 2026-10-09
+- feat: sessionAttention option (default off): one attention row in /ruflo-mods with the console's four counts (to approve, questions, failed, finished unread). Counts only; no gating behaviour changed (ADR-486).
+
 ## 0.3.16 — 2026-10-07
 - feat: shared toast system with levels, dedupe, persistence and Settings (ADR-477)
 - feat: shared toast policy and its call sites (ADR-477), work in progress

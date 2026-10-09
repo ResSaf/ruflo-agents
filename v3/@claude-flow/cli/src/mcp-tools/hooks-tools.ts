@@ -2803,8 +2803,12 @@ export const hooksSessionEnd: MCPTool = {
       // after the command has completed all logical work (#2691).
       try {
         await bridge?.shutdownBridge();
-      } catch {
-        // Cleanup is best-effort and must not fail session-end.
+      } catch (err) {
+        // Cleanup is best-effort and must not fail session-end, but a failed
+        // AgentDB persist (lock/concurrent writer) is never silent.
+        if ((err as { code?: unknown } | null)?.code === 'AGENTDB_LOCK_UNRECOVERABLE') {
+          process.stderr.write(`[ruflo] warning: ${(err as Error).message}\n`);
+        }
       }
     }
 

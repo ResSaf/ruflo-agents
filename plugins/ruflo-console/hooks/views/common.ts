@@ -7,6 +7,7 @@ import type { AskActions } from '../ask-claude'
 import type { OptimizerActions } from '../optimizer'
 import { askedBy } from '../data/room'
 import type { RoomActions } from '../room'
+import type { SessionActions } from '../sessions'
 import type { WatchActions } from '../watch'
 import type { WhatsNewActions } from '../whatsnew'
 import type { AdrActions } from '../adr-actions'
@@ -103,6 +104,8 @@ export type Actions = {
   timeline: TimelineActions
   /** The Room (ADR-448): the draft, what to send through, the feed's source filter, search, pause and paging. */
   room: RoomActions
+  /** The session workspace (ADR-486): select, move, jump from the attention queue, rescan, and the (unavailable) native open. */
+  sessions: SessionActions
   /** Ask Claude about this section (a visible prompt or a /btw aside) or run the plugin command that fits it: each asks first. */
   ask: AskActions
   /** ruHelp, the built-in help: a question, a guide, a step's button, and asking Claude with the docs. */
@@ -155,6 +158,8 @@ export type Ctx = {
   cards?: boolean
   /** The page's attention panel (views/attention.ts): lab views hand their result rows to it with `slot`. */
   attention?: Attention
+  /** True while the page is drawn as a text answer a model may read (viewText): a transcript is never drawn then (ADR-486). */
+  text?: boolean
 }
 
 export type Look = 'bbs' | 'plain'

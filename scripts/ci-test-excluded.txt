@@ -43,6 +43,7 @@ plugins/ruflo-market-data/tests/textsof.test.ts
 plugins/ruflo-metaharness/tests/register.test.ts
 plugins/ruflo-metaharness/tests/textsof.test.ts
 plugins/ruflo-migrations/tests/migrations-mod.test.ts
+plugins/ruflo-mods/tests/attention.test.ts
 plugins/ruflo-mods/tests/agents.test.ts
 plugins/ruflo-mods/tests/compact.test.ts
 plugins/ruflo-mods/tests/delivery.test.ts
