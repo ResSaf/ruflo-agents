@@ -6,7 +6,7 @@ Date: 2026-10-09
 
 Builds on: ADR-448 (the Room), ADR-473 (incremental transcripts, and what the host `$.fs` can read), ADR-481 (one sanitiser for drawn text), ADR-444 (Claude controls the console), ADR-477 (toasts), ADR-406 (mission observation)
 
-Numbering: ADR-485 is taken twice (the x-gateway query tools, and the open ruvnet-brain grounding change); this is 486.
+Numbering: ADR-487 is taken twice (the x-gateway query tools, and the open ruvnet-brain grounding change); this is 486.
 
 ## 1. Context
 

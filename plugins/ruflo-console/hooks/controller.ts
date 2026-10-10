@@ -14,6 +14,7 @@ import { diffEvents, record } from './data/events'
 import { agentName, announceChanges, factsOf, segmentOf, TOASTED_KEYS } from './notices'
 import { plain } from './data/parse'
 import { readSnapshot } from './data/snapshot'
+import { sayGroundingHint } from './grounding'
 import { markPicture } from './gfx/pictures'
 import type { Host } from './host'
 import { agentLogs } from './ops'
@@ -134,6 +135,7 @@ export function createController(state: State, host: Host): Controller {
       state.snapshot = snapshot
       syncWhatsNew(state, host)
       void syncAdrDigest(state, host).catch(() => undefined)
+      sayGroundingHint(state, host)
       record(state.events, diffEvents(previous, snapshot, now))
 
       // A mission that finished or lost a task is said in a toast too: the band's notice row reaches only a person looking at the console.
@@ -145,7 +147,6 @@ export function createController(state: State, host: Host): Controller {
       state.ruflo.snapshot = ruflo
       state.ruflo.route = route ?? ruflo?.lastRoute ?? null
       push(state.writes, snapshot.changed)
-
       for (const agent of snapshot.agents.slice(0, 200)) {
         const log = state.statusLog.get(agent.id) ?? []
 
@@ -154,7 +155,6 @@ export function createController(state: State, host: Host): Controller {
       }
 
       const patterns = snapshot.neural?.patterns
-
       if (patterns !== undefined && state.history.patterns.at(-1)?.value !== patterns) push(state.history.patterns, { atMs: now, value: patterns })
       if (usage?.costUsd !== undefined && state.history.spend.at(-1)?.value !== usage.costUsd) push(state.history.spend, { atMs: now, value: usage.costUsd })
       if ((snapshot.outcomes?.total ?? 0) > state.history.outcomes) {

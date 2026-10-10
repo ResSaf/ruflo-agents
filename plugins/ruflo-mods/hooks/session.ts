@@ -1,6 +1,7 @@
 import type { EngineInterface, On } from 'claude-code'
 import type { GuidanceHooks } from './guidance'
 
+import { detectBrain } from './grounding'
 import { versionText } from './probe'
 import { HANDSHAKE_MARKER, ownedEvents } from './ownership'
 import type { ModOptions } from './options'
@@ -67,6 +68,21 @@ async function helperHonours($: EngineInterface): Promise<boolean> {
   return true
 }
 
+/** ADR-485: the brain's status from installed_plugins.json and the merged settings; any failure is `unknown`. */
+async function detectGrounding($: EngineInterface, settings: unknown) {
+  try {
+    const dir = (await $.env.get('CLAUDE_CONFIG_DIR').catch(() => undefined)) || `${(await $.env.get('HOME').catch(() => undefined)) ?? ''}/.claude`
+    const path = `${dir}/plugins/installed_plugins.json`
+    const stat = await $.fs.stat(path)
+
+    if (stat.kind !== 'file' || stat.size > 2_000_000) return detectBrain(null, settings)
+
+    return detectBrain(await $.fs.read(path), settings)
+  } catch {
+    return detectBrain(null, settings)
+  }
+}
+
 /** Whether a ruflo statusLine is configured: then the mod draws none. */
 function hasClassicStatusLine(settings: unknown): boolean {
   const command = (settings as { statusLine?: { command?: unknown } } | null)?.statusLine?.command
@@ -98,6 +114,7 @@ export function registerSession(on: On, state: ModState, options: ModOptions, gu
     await $.env.set('RUFLO_MODS_OWNS', state.owned.size ? [...state.owned].join(',') : undefined)
     state.statusLine = options.statusLine && !hasClassicStatusLine(settings)
     if (state.probe.enabled) state.probe.version = versionText(await $.session.version().catch(() => undefined))
+    if (state.grounding.enabled) state.grounding.status = await detectGrounding($, settings)
     guidance?.start()
     redraw(state)
     await $.command

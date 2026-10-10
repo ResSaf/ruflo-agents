@@ -3,6 +3,8 @@ import type { RenderElement } from 'claude-code'
 import { alertsOf } from '../data/alerts'
 import type { MemoryStats } from '../data/cli'
 import type { StartId } from '../starts'
+import { brainStatusOf, BRAIN_REPO, statusLine as groundingLine } from '../grounding'
+import { settingsOf } from '../settings'
 import { controlRows, isControlActive } from './control'
 import { optimizerRows } from './optimizer'
 import { uniqueAgents } from '../data/swarm-status'
@@ -53,6 +55,16 @@ export function overviewView(ctx: Ctx): RenderElement {
       mcp !== null && mcp.tools > 0 ? THEME.ok : undefined,
     ),
   )
+  const brain = brainStatusOf(state)
+  const groundingPrefs = settingsOf(state).ai
+
+  rows.push(kv(ctx, 'Grounding', groundingLine(brain), brain === 'on' ? THEME.ok : undefined))
+
+  if (brain === 'not-installed' && groundingPrefs.groundingHint && !groundingPrefs.groundingDismissed) {
+    rows.push(text(ctx, `Optional: RuvNet Brain (third-party) can ground ruvnet-stack answers: ${BRAIN_REPO}. The console never installs it.`, { dimColor: true }))
+    rows.push(row(ctx, [button(ctx, 'grounding-dismiss', 'Dismiss this hint', () => ctx.act.settings.ai({ groundingDismissed: true }))], 'grounding-dismiss-row'))
+  }
+
   rows.push(kv(ctx, 'memory DB', memory !== null ? `${count(memory.total)} entries · ${count(memory.vectors)} vectors · ${memory.backend}${memory.storage !== undefined ? ` · ${memory.storage}` : ''}` : sourceLine(state.probes.get('memory'), nowMs, 'n/a').text))
   rows.push(
     kv(

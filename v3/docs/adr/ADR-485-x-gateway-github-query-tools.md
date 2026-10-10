@@ -1,4 +1,4 @@
-# ADR 485: x.ruv.io GitHub query tools for Seraphina and RuvBrain
+# ADR 487: x.ruv.io GitHub query tools for Seraphina and RuvBrain
 
 Status: Accepted
 
